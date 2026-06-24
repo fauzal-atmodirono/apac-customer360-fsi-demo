@@ -1,0 +1,16 @@
+config {
+  type: "assertion",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Fails if any active Savings (SV) account carries a negative balance. Drives test case TC-3.1 and blocks Gold writes on bad data."
+}
+
+-- An assertion passes when it returns zero rows.
+SELECT
+  account_id,
+  customer_id,
+  balance
+FROM
+  ${ref("dim_accounts")}
+WHERE
+  balance < 0
+  AND account_type = 'SV'

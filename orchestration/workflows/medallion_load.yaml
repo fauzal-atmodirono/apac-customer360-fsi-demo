@@ -1,0 +1,129 @@
+# Cloud Workflows definition: daily AS400 -> Bronze -> Dataform (Silver/Gold).
+# Lightweight, near-zero-idle-cost alternative to Cloud Composer that drives the
+# same DAG logic from the BRD section 6.1. Triggered by Cloud Scheduler.
+#
+# Runtime input (all optional; sensible defaults derived from the environment):
+#   {
+#     "repository": "c360-medallion",
+#     "gitCommitish": "main",
+#     "vars": { "policy_tag_pii_name": "...", ... }   # from `terraform output`
+#   }
+main:
+  params: [input]
+  steps:
+    - init:
+        assign:
+          - project: ${sys.get_env("GOOGLE_CLOUD_PROJECT_ID")}
+          - location: ${default(map.get(input, "location"), "us-central1")}
+          - bq_location: ${default(map.get(input, "bq_location"), "US")}
+          - bucket: ${default(map.get(input, "bucket"), project + "-as400-core-data-drop")}
+          - bronze_dataset: ${default(map.get(input, "bronze_dataset"), "demo_bronze_as400")}
+          - repository: ${default(map.get(input, "repository"), "c360-medallion")}
+          - git_commitish: ${default(map.get(input, "gitCommitish"), "main")}
+          - compile_vars: ${default(map.get(input, "vars"), {})}
+          - files:
+              - {csv: "AS400_CUST_MAST.csv", table: "AS400_CUST_MAST"}
+              - {csv: "AS400_SVDP_MAST.csv", table: "AS400_SVDP_MAST"}
+              - {csv: "AS400_CC_TXN.csv", table: "AS400_CC_TXN"}
+              - {csv: "AS400_DC_TXN.csv", table: "AS400_DC_TXN"}
+              - {csv: "AS400_LOAN_MAST.csv", table: "AS400_LOAN_MAST"}
+          - df_base: ${"https://dataform.googleapis.com/v1beta1/projects/" + project + "/locations/" + location + "/repositories/" + repository}
+
+    # --- FR-1.1: ensure all four daily files have arrived before processing ---
+    - check_files:
+        for:
+          value: f
+          in: ${files}
+          steps:
+            - stat_object:
+                try:
+                  call: googleapis.storage.v1.objects.get
+                  args:
+                    bucket: ${bucket}
+                    object: ${f.csv}
+                  result: obj
+                except:
+                  as: e
+                  steps:
+                    - missing:
+                        raise: ${"Required source file not found in gs://" + bucket + "/" + f.csv}
+
+    # --- Bronze: load each CSV to BigQuery (WRITE_TRUNCATE, header skipped) ----
+    - load_bronze:
+        for:
+          value: f
+          in: ${files}
+          steps:
+            - load_job:
+                call: googleapis.bigquery.v2.jobs.insert
+                args:
+                  projectId: ${project}
+                  body:
+                    configuration:
+                      load:
+                        sourceUris:
+                          - ${"gs://" + bucket + "/" + f.csv}
+                        destinationTable:
+                          projectId: ${project}
+                          datasetId: ${bronze_dataset}
+                          tableId: ${f.table}
+                        sourceFormat: CSV
+                        skipLeadingRows: 1
+                        autodetect: true
+                        writeDisposition: WRITE_TRUNCATE
+                result: load_result
+
+    # --- Dataform: compile the project with policy-tag vars injected ----------
+    - dataform_compile:
+        call: http.post
+        args:
+          url: ${df_base + "/compilationResults"}
+          auth:
+            type: OAuth2
+          body:
+            gitCommitish: ${git_commitish}
+            codeCompilationConfig:
+              defaultDatabase: ${project}
+              defaultLocation: ${bq_location}
+              vars: ${compile_vars}
+        result: compilation
+
+    # --- Dataform: run Silver + Gold + assertions (transitive deps included) --
+    - dataform_invoke:
+        call: http.post
+        args:
+          url: ${df_base + "/workflowInvocations"}
+          auth:
+            type: OAuth2
+          body:
+            compilationResult: ${compilation.body.name}
+            invocationConfig:
+              transitiveDependenciesIncluded: true
+        result: invocation
+
+    - poll_invocation:
+        steps:
+          - wait:
+              call: sys.sleep
+              args:
+                seconds: 15
+          - get_state:
+              call: http.get
+              args:
+                url: ${"https://dataform.googleapis.com/v1beta1/" + invocation.body.name}
+                auth:
+                  type: OAuth2
+              result: inv_state
+          - decide:
+              switch:
+                - condition: ${inv_state.body.state == "RUNNING"}
+                  next: poll_invocation
+                - condition: ${inv_state.body.state == "SUCCEEDED"}
+                  next: done
+              next: failed
+
+    - failed:
+        raise: '${"Dataform workflow invocation did not succeed - state " + inv_state.body.state}'
+
+    - done:
+        return: '${"Customer 360 medallion load succeeded - " + invocation.body.name}'

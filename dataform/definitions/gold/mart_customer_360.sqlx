@@ -1,0 +1,149 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Unified, denormalized Customer 360 analytical mart powering hyper-personalization (NBA, churn, life-stage, credit pre-approval).",
+  assertions: {
+    uniqueKey: ["customer_id"],
+    nonNull: ["customer_id", "total_savings_balance"]
+  },
+  columns: {
+    customer_id: "Primary key (customer CIF).",
+    // Policy tags do NOT auto-propagate to derived tables in BigQuery, so PII
+    // columns surfaced in Gold must re-declare their tags explicitly.
+    full_name: constants.piiColumn("Customer full legal name.", "PII_NAME"),
+    phone_number: constants.piiColumn("Primary contact phone number.", "PII_PHONE"),
+    age: "Age in years derived from birth_date.",
+    customer_segment: "Source tier assignment (MASS / HNW / AFFLUENT).",
+    region: "Customer home region / branch area.",
+    tenure_years: "Years since the customer relationship began.",
+    income_band: "Income tier (LOW / MID / HIGH / VERY_HIGH).",
+    annual_income: "Reported annual income.",
+    total_savings_balance: "Sum of active SV account balances.",
+    total_deposit_balance: "Sum of active DP account balances.",
+    cc_spend_last_30_days: "Credit-card purchase spend in the trailing 30 days.",
+    top_spending_category: "Most frequent credit-card spending category (last 90 days).",
+    debit_spend_last_30_days: "Debit-card purchase/withdrawal spend in the trailing 30 days.",
+    atm_withdrawals_last_30_days: "Count of ATM cash withdrawals in the trailing 30 days.",
+    total_card_spend_last_30_days: "Combined credit + debit spend in the trailing 30 days.",
+    has_active_mortgage: "TRUE if the customer holds a mortgage loan.",
+    total_loan_outstanding: "Sum of outstanding loan balances.",
+    debt_to_deposit_ratio: "total_loan_outstanding / total_savings_balance.",
+    investment_propensity_score: "0-100 likelihood-to-invest score (PRD section 4.2).",
+    propensity_score_segment: "Derived product-affinity target bucket for campaigns.",
+    churn_risk_score: "0-100 churn-risk score. Weighted on ATM cash-out intensity (cash flight), thin savings, and dormant credit-card activity (BRD churn use case).",
+    churn_risk_segment: "HIGH / MEDIUM / LOW churn-risk band derived from churn_risk_score."
+  }
+}
+
+WITH agg_savings AS (
+  SELECT
+    customer_id,
+    SUM(CASE WHEN account_type = 'SV' THEN balance ELSE 0 END) AS total_savings_balance,
+    SUM(CASE WHEN account_type = 'DP' THEN balance ELSE 0 END) AS total_deposit_balance
+  FROM
+    ${ref("dim_accounts")}
+  WHERE status = 'A'
+  GROUP BY 1
+),
+
+agg_cards AS (
+  SELECT
+    customer_id,
+    SUM(CASE
+      WHEN transaction_type = 'DEBIT'
+       AND transaction_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
+      THEN transaction_amount ELSE 0 END) AS cc_spend_last_30_days,
+    APPROX_TOP_COUNT(
+      IF(transaction_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY), spending_category, NULL),
+      1
+    )[OFFSET(0)].value AS top_spending_category
+  FROM
+    ${ref("fct_credit_card_transactions")}
+  GROUP BY 1
+),
+
+agg_debit AS (
+  SELECT
+    customer_id,
+    SUM(CASE
+      WHEN transaction_type = 'DEBIT'
+       AND transaction_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
+      THEN transaction_amount ELSE 0 END) AS debit_spend_last_30_days,
+    COUNTIF(
+      is_atm_withdrawal
+      AND transaction_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
+    ) AS atm_withdrawals_last_30_days
+  FROM
+    ${ref("fct_debit_card_transactions")}
+  GROUP BY 1
+),
+
+agg_loans AS (
+  SELECT
+    customer_id,
+    MAX(loan_type = 'MORTGAGE') AS has_active_mortgage,
+    SUM(outstanding_balance) AS total_loan_outstanding
+  FROM
+    ${ref("dim_loans")}
+  GROUP BY 1
+)
+
+SELECT
+  c.customer_id,
+  c.full_name,
+  c.phone_number,
+  DATE_DIFF(CURRENT_DATE(), c.birth_date, YEAR) AS age,
+  c.customer_segment,
+  c.region,
+  DATE_DIFF(CURRENT_DATE(), c.customer_since, YEAR) AS tenure_years,
+  c.income_band,
+  c.annual_income,
+  COALESCE(s.total_savings_balance, 0) AS total_savings_balance,
+  COALESCE(s.total_deposit_balance, 0) AS total_deposit_balance,
+  COALESCE(cc.cc_spend_last_30_days, 0) AS cc_spend_last_30_days,
+  COALESCE(cc.top_spending_category, 'NONE') AS top_spending_category,
+  COALESCE(dc.debit_spend_last_30_days, 0) AS debit_spend_last_30_days,
+  COALESCE(dc.atm_withdrawals_last_30_days, 0) AS atm_withdrawals_last_30_days,
+  COALESCE(cc.cc_spend_last_30_days, 0) + COALESCE(dc.debit_spend_last_30_days, 0) AS total_card_spend_last_30_days,
+  COALESCE(l.has_active_mortgage, FALSE) AS has_active_mortgage,
+  COALESCE(l.total_loan_outstanding, 0) AS total_loan_outstanding,
+
+  -- Debt-to-Deposit Ratio (PRD section 4.2). max(0.01, savings) guards div-by-zero.
+  SAFE_DIVIDE(
+    COALESCE(l.total_loan_outstanding, 0),
+    GREATEST(0.01, COALESCE(s.total_savings_balance, 0))
+  ) AS debt_to_deposit_ratio,
+
+  -- Investment Propensity Score (0-100), PRD section 4.2.
+  ROUND(100 * (
+      (${constants.IPS.W_SAVINGS} * LEAST(1.0, COALESCE(s.total_savings_balance, 0) / ${constants.IPS.SAVINGS_NORM}))
+    + (${constants.IPS.W_DEBT}    * (1 - LEAST(1.0, COALESCE(l.total_loan_outstanding, 0) / ${constants.IPS.DEBT_NORM})))
+  ), 2) AS investment_propensity_score,
+
+  -- Target segment derivation (PRD section 6.2).
+  CASE
+    WHEN COALESCE(s.total_savings_balance, 0) > 250000 AND COALESCE(l.total_loan_outstanding, 0) = 0
+      THEN 'HNW_INVESTOR'
+    WHEN COALESCE(l.total_loan_outstanding, 0) > 200000 AND COALESCE(s.total_savings_balance, 0) < 10000
+      THEN 'LEVERAGED_BORROWER'
+    WHEN COALESCE(cc.cc_spend_last_30_days, 0) > 5000
+      THEN 'DIGITAL_SHOPPER'
+    ELSE 'STANDARD_RETAIL'
+  END AS propensity_score_segment,
+
+  -- Churn-risk score (0-100), ATM cash-flight weighted (BRD churn use case).
+  ${constants.churnRiskScoreSql()} AS churn_risk_score,
+
+  -- Churn-risk band.
+  CASE
+    WHEN ${constants.churnRiskScoreSql()} >= ${constants.CHURN.HIGH_THRESHOLD} THEN 'HIGH'
+    WHEN ${constants.churnRiskScoreSql()} >= ${constants.CHURN.MEDIUM_THRESHOLD} THEN 'MEDIUM'
+    ELSE 'LOW'
+  END AS churn_risk_segment
+
+FROM
+  ${ref("dim_customers")} c
+  LEFT JOIN agg_savings s ON c.customer_id = s.customer_id
+  LEFT JOIN agg_cards cc ON c.customer_id = cc.customer_id
+  LEFT JOIN agg_debit dc ON c.customer_id = dc.customer_id
+  LEFT JOIN agg_loans l ON c.customer_id = l.customer_id

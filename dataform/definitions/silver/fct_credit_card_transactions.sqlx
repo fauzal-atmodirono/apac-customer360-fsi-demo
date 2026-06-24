@@ -1,0 +1,40 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Conformed credit-card transaction fact from AS400_CC_TXN. Legacy single-char TXNTYP (D/C) is mapped to DEBIT/CREDIT so downstream Gold aggregations read cleanly.",
+  bigquery: {
+    partitionBy: "transaction_date"
+  },
+  assertions: {
+    uniqueKey: ["transaction_id"],
+    nonNull: ["transaction_id", "customer_id"]
+  },
+  columns: {
+    transaction_id: "Unique transaction ID.",
+    card_number: constants.piiColumn("Masked credit-card PAN (Sensitive_Financials).", "CARD_PAN"),
+    customer_id: "Owning customer CIF (FK to dim_customers).",
+    transaction_date: "Transaction date, parsed from legacy YYYYMMDD numeric.",
+    transaction_amount: "Transaction amount.",
+    spending_category: "Spending category (RETAIL, GROCERY, TRAVEL, ...).",
+    transaction_type: "DEBIT (purchase) / CREDIT (payment), mapped from legacy D/C.",
+    _ingested_at: "Pipeline ingestion timestamp.",
+    _source_file: "Originating AS400 source table."
+  }
+}
+
+SELECT
+  TRIM(TXNID) AS transaction_id,
+  TRIM(CRDNO) AS card_number,
+  TRIM(CC_CIF) AS customer_id,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(TXNDT AS STRING)) AS transaction_date,
+  CAST(TXNAMT AS NUMERIC) AS transaction_amount,
+  UPPER(TRIM(TXN_CAT)) AS spending_category,
+  CASE UPPER(TRIM(TXNTYP))
+    WHEN 'D' THEN 'DEBIT'
+    WHEN 'C' THEN 'CREDIT'
+    ELSE 'UNKNOWN'
+  END AS transaction_type,
+  CURRENT_TIMESTAMP() AS _ingested_at,
+  "AS400_CC_TXN" AS _source_file
+FROM
+  ${ref("AS400_CC_TXN")}

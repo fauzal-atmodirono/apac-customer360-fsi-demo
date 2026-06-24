@@ -1,0 +1,45 @@
+# --- Secrets / credentials (never commit) ---
+**/.env
+**/.env.*
+!**/.env.example
+**/.df-credentials.json
+*-key.json
+*serviceaccount*.json
+*service-account*.json
+*credentials*.json
+*.pem
+*.p12
+id_rsa*
+*.key
+
+# --- Terraform ---
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars.local
+override.tf
+override.tf.json
+
+# --- Generated mock data ---
+data_generator/out/
+*.csv
+!docs/**
+
+# --- Node / Next.js (webapp) ---
+**/node_modules/
+**/.next/
+webapp/public/sw.js
+webapp/public/sw.js.map
+next-env.d.ts
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+.venv-viz/
+venv/
+
+# --- Misc ---
+.DS_Store
+.playwright-mcp/

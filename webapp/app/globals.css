@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 210 22% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 210 22% 12%;
+    --primary: 211 79% 42%;          /* #1565C0 banking blue */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 210 22% 20%;
+    --muted: 213 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 211 79% 95%;
+    --accent-foreground: 211 79% 30%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 211 79% 42%;
+    --success: 122 39% 33%;          /* green */
+    --warning: 45 96% 47%;           /* amber */
+    --danger: 0 65% 47%;             /* red */
+    --radius: 0.65rem;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground antialiased; }
+}
+
+/* Keep MapLibre canvas crisp inside rounded cards */
+.maplibregl-map { border-radius: var(--radius); }

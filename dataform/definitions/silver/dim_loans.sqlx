@@ -1,0 +1,36 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Conformed loan ledger (mortgage / car / personal) from AS400_LOAN_MAST.",
+  bigquery: {
+    partitionBy: "DATE(_ingested_at)"
+  },
+  assertions: {
+    uniqueKey: ["loan_id"],
+    nonNull: ["loan_id", "customer_id"]
+  },
+  columns: {
+    loan_id: "Loan account number.",
+    customer_id: "Owning customer CIF (FK to dim_customers).",
+    loan_type: "MORTGAGE / CAR / PERSONAL.",
+    principal_amount: "Approved principal amount.",
+    outstanding_balance: "Current outstanding loan balance.",
+    monthly_installment: "Monthly installment amount.",
+    next_due_date: "Next payment due date.",
+    _ingested_at: "Pipeline ingestion timestamp.",
+    _source_file: "Originating AS400 source table."
+  }
+}
+
+SELECT
+  TRIM(LN_NO) AS loan_id,
+  TRIM(LN_CIF) AS customer_id,
+  UPPER(TRIM(LNTYPE)) AS loan_type,
+  CAST(LN_AMT AS NUMERIC) AS principal_amount,
+  CAST(LN_BAL AS NUMERIC) AS outstanding_balance,
+  CAST(LNMTHP AS NUMERIC) AS monthly_installment,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(LN_DUE AS STRING)) AS next_due_date,
+  CURRENT_TIMESTAMP() AS _ingested_at,
+  "AS400_LOAN_MAST" AS _source_file
+FROM
+  ${ref("AS400_LOAN_MAST")}

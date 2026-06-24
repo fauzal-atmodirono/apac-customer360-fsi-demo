@@ -1,0 +1,39 @@
+{
+  "name": "customer360-webapp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@google-cloud/bigquery": "^7.9.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "google-auth-library": "^9.15.0",
+    "lucide-react": "^0.460.0",
+    "maplibre-gl": "^4.7.1",
+    "next": "14.2.18",
+    "next-auth": "5.0.0-beta.25",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-map-gl": "^7.1.7",
+    "recharts": "^2.13.3",
+    "swr": "^2.2.5",
+    "tailwind-merge": "^2.5.5"
+  },
+  "devDependencies": {
+    "@serwist/next": "^9.0.11",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "serwist": "^9.0.11",
+    "tailwindcss": "^3.4.15",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5"
+  }
+}

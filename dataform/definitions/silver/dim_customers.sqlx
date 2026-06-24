@@ -1,0 +1,47 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Conformed customer dimension from the legacy CIF (AS400_CUST_MAST), with PII column-level security tags.",
+  bigquery: {
+    partitionBy: "DATE(_ingested_at)"
+  },
+  assertions: {
+    uniqueKey: ["customer_id"],
+    nonNull: ["customer_id", "full_name"]
+  },
+  columns: {
+    customer_id: "Unique customer identifier (legacy CIF).",
+    full_name: constants.piiColumn("Customer full legal name.", "PII_NAME"),
+    address: constants.piiColumn("Primary residential address.", "PII_ADDRESS"),
+    phone_number: constants.piiColumn("Primary contact phone number.", "PII_PHONE"),
+    birth_date: "Date of birth, parsed from the legacy YYYYMMDD numeric.",
+    customer_segment: "Normalized customer segment (MASS / HNW / AFFLUENT).",
+    region: "Customer home region / branch area.",
+    customer_since: "Date the customer relationship began.",
+    annual_income: "Reported annual income.",
+    income_band: "Income tier (LOW / MID / HIGH / VERY_HIGH) derived from annual_income.",
+    _ingested_at: "Pipeline ingestion timestamp.",
+    _source_file: "Originating AS400 source table."
+  }
+}
+
+SELECT
+  TRIM(CMCIF) AS customer_id,
+  TRIM(CMNAME) AS full_name,
+  TRIM(CMADR1) AS address,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(CMDOB AS STRING)) AS birth_date,
+  UPPER(TRIM(CMSEG)) AS customer_segment,
+  TRIM(CMPHNE) AS phone_number,
+  UPPER(TRIM(CMRGN)) AS region,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(CMSINCE AS STRING)) AS customer_since,
+  CAST(CMINC AS NUMERIC) AS annual_income,
+  CASE
+    WHEN CAST(CMINC AS NUMERIC) < 50000 THEN 'LOW'
+    WHEN CAST(CMINC AS NUMERIC) < 150000 THEN 'MID'
+    WHEN CAST(CMINC AS NUMERIC) < 500000 THEN 'HIGH'
+    ELSE 'VERY_HIGH'
+  END AS income_band,
+  CURRENT_TIMESTAMP() AS _ingested_at,
+  "AS400_CUST_MAST" AS _source_file
+FROM
+  ${ref("AS400_CUST_MAST")}

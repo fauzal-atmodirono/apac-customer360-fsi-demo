@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Conformed savings/deposit account ledger from AS400_SVDP_MAST.",
+  bigquery: {
+    partitionBy: "DATE(_ingested_at)"
+  },
+  assertions: {
+    uniqueKey: ["account_id"],
+    nonNull: ["account_id", "customer_id"]
+  },
+  columns: {
+    account_id: "Account number.",
+    customer_id: "Owning customer CIF (FK to dim_customers).",
+    account_type: "SV = Savings, DP = Term Deposit.",
+    balance: "Current account balance.",
+    open_date: "Account open date.",
+    status: "Raw status code (A = Active, I = Inactive, C = Closed).",
+    status_desc: "Human-readable account status.",
+    _ingested_at: "Pipeline ingestion timestamp.",
+    _source_file: "Originating AS400 source table."
+  }
+}
+
+SELECT
+  TRIM(ACCNO) AS account_id,
+  TRIM(AC_CIF) AS customer_id,
+  UPPER(TRIM(ACTYPE)) AS account_type,
+  CAST(ACBAL AS NUMERIC) AS balance,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(ACOPDT AS STRING)) AS open_date,
+  UPPER(TRIM(ACSTAT)) AS status,
+  CASE UPPER(TRIM(ACSTAT))
+    WHEN 'A' THEN 'ACTIVE'
+    WHEN 'I' THEN 'INACTIVE'
+    WHEN 'C' THEN 'CLOSED'
+    ELSE 'UNKNOWN'
+  END AS status_desc,
+  CURRENT_TIMESTAMP() AS _ingested_at,
+  "AS400_SVDP_MAST" AS _source_file
+FROM
+  ${ref("AS400_SVDP_MAST")}
