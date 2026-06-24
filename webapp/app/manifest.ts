@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Customer 360 — Hyper-Personalization",
-    short_name: "Customer 360",
-    description: "Core Banking Customer 360 analytics dashboard",
+    name: "Bank Muamalat Malaysia — Customer 360",
+    short_name: "Muamalat C360",
+    description: "Bank Muamalat Malaysia Islamic-banking Customer 360 & hyper-personalization dashboard",
     start_url: "/executive",
     display: "standalone",
     background_color: "#ffffff",

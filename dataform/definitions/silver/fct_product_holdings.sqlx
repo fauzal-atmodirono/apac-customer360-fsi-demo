@@ -1,0 +1,88 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Unified per-customer product holdings. Existing core accounts, financing and cards are mapped to Bank Muamalat product codes; investment / Takaful / estate / digital holdings come from AS400_PROD_HOLD. Joinable to dim_products.",
+  assertions: {
+    uniqueKey: ["holding_id"],
+    nonNull: ["holding_id", "customer_id", "product_code"]
+  },
+  columns: {
+    holding_id: "Unique holding ID (primary key).",
+    customer_id: "Owning customer CIF (FK to dim_customers).",
+    product_code: "Held product (FK to dim_products).",
+    status: "Holding status (A active / I inactive / C closed).",
+    open_date: "Holding open date (NULL where not tracked, e.g. cards).",
+    balance: "Outstanding balance / invested amount where applicable (NULL otherwise).",
+    holding_kind: "CORE_ACCOUNT / FINANCING / CARD / PRODUCT."
+  }
+}
+
+-- Core deposit accounts -> deposit products
+SELECT
+  account_id AS holding_id,
+  customer_id,
+  CASE account_type WHEN 'SV' THEN 'DEP-SAV' WHEN 'DP' THEN 'DEP-FTA' ELSE 'DEP-SAV' END AS product_code,
+  status,
+  open_date,
+  CAST(balance AS FLOAT64) AS balance,
+  'CORE_ACCOUNT' AS holding_kind
+FROM ${ref("dim_accounts")}
+
+UNION ALL
+
+-- Financing accounts -> financing products
+SELECT
+  loan_id AS holding_id,
+  customer_id,
+  CASE loan_type
+    WHEN 'MORTGAGE' THEN 'FIN-MORTHOME'
+    WHEN 'CAR' THEN 'FIN-VEH'
+    WHEN 'PERSONAL' THEN 'FIN-CASH'
+    WHEN 'EDUCATION' THEN 'FIN-ASB'
+    WHEN 'CREDIT_LINE' THEN 'FIN-CASHLINE'
+    ELSE 'FIN-CASH' END AS product_code,
+  'A' AS status,
+  CAST(NULL AS DATE) AS open_date,
+  CAST(outstanding_balance AS FLOAT64) AS balance,
+  'FINANCING' AS holding_kind
+FROM ${ref("dim_loans")}
+
+UNION ALL
+
+-- Credit-card holders -> Visa Platinum-i (Infinite-i for HNW)
+SELECT
+  CONCAT('CC-', cc.customer_id) AS holding_id,
+  cc.customer_id,
+  IF(c.customer_segment = 'HNW', 'CARD-INF', 'CARD-PLAT') AS product_code,
+  'A' AS status,
+  CAST(NULL AS DATE) AS open_date,
+  CAST(NULL AS FLOAT64) AS balance,
+  'CARD' AS holding_kind
+FROM (SELECT DISTINCT customer_id FROM ${ref("fct_credit_card_transactions")}) cc
+LEFT JOIN ${ref("dim_customers")} c ON c.customer_id = cc.customer_id
+
+UNION ALL
+
+-- Debit-card holders -> Debit Card-i
+SELECT
+  CONCAT('DC-', customer_id) AS holding_id,
+  customer_id,
+  'CARD-DEBIT' AS product_code,
+  'A' AS status,
+  CAST(NULL AS DATE) AS open_date,
+  CAST(NULL AS FLOAT64) AS balance,
+  'CARD' AS holding_kind
+FROM (SELECT DISTINCT customer_id FROM ${ref("fct_debit_card_transactions")})
+
+UNION ALL
+
+-- New-category holdings (investment / Takaful / estate / digital / Ar-Rahnu)
+SELECT
+  TRIM(HOLDID) AS holding_id,
+  TRIM(PH_CIF) AS customer_id,
+  TRIM(PRDCODE) AS product_code,
+  TRIM(PHSTAT) AS status,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(PHOPDT AS STRING)) AS open_date,
+  CAST(PHBAL AS FLOAT64) AS balance,
+  'PRODUCT' AS holding_kind
+FROM ${ref("AS400_PROD_HOLD")}

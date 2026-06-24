@@ -1,5 +1,5 @@
 import "server-only";
-import { runQuery, PROJECT, GOLD, SILVER, MART, PERS, DIM_CUSTOMERS, FCT_CC, FCT_DC } from "./bigquery";
+import { runQuery, PROJECT, GOLD, SILVER, MART, PERS, DIM_CUSTOMERS, FCT_CC, FCT_DC, DIM_PRODUCTS, FCT_HOLDINGS } from "./bigquery";
 import { money } from "./format";
 
 // Server-side BigQuery Standard SQL for the dashboard API routes.
@@ -218,9 +218,31 @@ function nextBestActions(m: Mart) {
   return out;
 }
 
+export async function productsData() {
+  const [catalog, byCategory, perCustomer, kpis] = await Promise.all([
+    q(`SELECT p.product_code, p.product_name, p.category, p.islamic_contract, p.product_type,
+              CAST(p.indicative_rate AS FLOAT64) AS indicative_rate,
+              COUNT(DISTINCT h.customer_id) AS holders
+       FROM ${DIM_PRODUCTS} p LEFT JOIN ${FCT_HOLDINGS} h USING(product_code)
+       GROUP BY 1,2,3,4,5,6 ORDER BY p.category, holders DESC`),
+    q(`SELECT p.category, COUNT(DISTINCT h.customer_id) AS holders, COUNT(*) AS holdings
+       FROM ${DIM_PRODUCTS} p LEFT JOIN ${FCT_HOLDINGS} h USING(product_code)
+       GROUP BY 1 ORDER BY holders DESC`),
+    q(`SELECT products, COUNT(*) AS customers FROM (
+         SELECT customer_id, COUNT(DISTINCT product_code) AS products
+         FROM ${FCT_HOLDINGS} GROUP BY 1) GROUP BY 1 ORDER BY products`),
+    q(`SELECT
+         (SELECT COUNT(*) FROM ${DIM_PRODUCTS}) AS catalog_size,
+         CAST((SELECT COUNT(DISTINCT product_code) FROM ${FCT_HOLDINGS}) AS FLOAT64) AS products_held,
+         CAST(AVG(n) AS FLOAT64) AS avg_products
+       FROM (SELECT COUNT(DISTINCT product_code) AS n FROM ${FCT_HOLDINGS} GROUP BY customer_id)`),
+  ]);
+  return { catalog, byCategory, perCustomer, kpis: kpis[0] };
+}
+
 export async function customerDetail(id: string) {
   const p = { params: { id } };
-  const [mart, dim, accounts, loans, trend, categories, recent, signals] = await Promise.all([
+  const [mart, dim, accounts, loans, trend, categories, recent, signals, holdings] = await Promise.all([
     q(`SELECT * FROM ${MART} WHERE customer_id = @id`, p),
     q(`SELECT address, customer_since FROM ${DIM_CUSTOMERS} WHERE customer_id = @id`, p),
     q(`SELECT account_id, account_type, CAST(balance AS FLOAT64) AS balance, status_desc,
@@ -246,11 +268,15 @@ export async function customerDetail(id: string) {
                 CAST(transaction_amount AS FLOAT64), transaction_type FROM ${FCT_DC} WHERE customer_id=@id)
        ORDER BY date DESC LIMIT 15`, p),
     q(`SELECT * FROM ${PERS} WHERE customer_id = @id`, p),
+    q(`SELECT pr.product_name, pr.category, pr.islamic_contract, h.holding_kind,
+              h.status, CAST(h.open_date AS STRING) AS open_date, CAST(h.balance AS FLOAT64) AS balance
+       FROM ${FCT_HOLDINGS} h JOIN ${DIM_PRODUCTS} pr USING(product_code)
+       WHERE h.customer_id = @id ORDER BY pr.category, h.balance DESC`, p),
   ]);
   const profile = mart[0] ? { ...(mart[0] as Mart), ...(dim[0] ?? {}) } : null;
   return {
     profile,
-    accounts, loans, trend, categories, recent,
+    accounts, loans, trend, categories, recent, holdings,
     signals: signals[0] ?? null,
     nba: profile ? nextBestActions(mart[0] as Mart) : [],
   };

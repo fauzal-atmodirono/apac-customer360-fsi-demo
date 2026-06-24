@@ -5,10 +5,10 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Customer 360 — Hyper-Personalization",
-  description: "Core Banking Customer 360 analytics dashboard",
+  title: "Bank Muamalat Malaysia — Customer 360",
+  description: "Bank Muamalat Malaysia Islamic-banking Customer 360 & hyper-personalization dashboard",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Customer 360" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Muamalat C360" },
 };
 
 export const viewport: Viewport = { themeColor: "#1565C0" };

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, MapPin, TrendingDown, Megaphone, LineChart, ShieldCheck, Landmark, Users, Sparkles,
+  LayoutDashboard, MapPin, TrendingDown, Megaphone, LineChart, ShieldCheck, Landmark, Users, Sparkles, Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +11,7 @@ const NAV = [
   { href: "/executive", label: "Executive overview", icon: LayoutDashboard },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/personalization", label: "Personalization", icon: Sparkles },
+  { href: "/products", label: "Products", icon: Package },
   { href: "/demographics", label: "Demographics", icon: MapPin },
   { href: "/churn", label: "Churn risk", icon: TrendingDown },
   { href: "/marketing", label: "Marketing / NBA", icon: Megaphone },
@@ -27,8 +28,8 @@ export function AppSidebar({ userSlot }: { userSlot?: React.ReactNode }) {
           <Landmark className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-sm font-semibold leading-tight">Customer 360</p>
-          <p className="text-xs text-muted-foreground">Hyper-Personalization</p>
+          <p className="text-sm font-semibold leading-tight">Bank Muamalat</p>
+          <p className="text-xs text-muted-foreground">Customer 360</p>
         </div>
       </div>
       <nav className="flex-1 space-y-1 px-3 py-2">

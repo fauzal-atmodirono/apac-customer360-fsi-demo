@@ -35,15 +35,15 @@ export default function ExecutivePage() {
       <PageHeader title="Executive overview" />
       <KpiRow>
         <KpiCard label="Customers" value={total.toLocaleString()} delta={gr.customers} />
-        <KpiCard label="Total savings" value={money(k.total_savings)} delta={gr.total_savings} />
-        <KpiCard label="Total loans" value={money(k.total_loans)} delta={gr.total_loans} />
+        <KpiCard label="Total savings-i" value={money(k.total_savings)} delta={gr.total_savings} />
+        <KpiCard label="Total financing-i" value={money(k.total_loans)} delta={gr.total_loans} />
         <KpiCard label="Avg propensity" value={`${num(k.avg_ips).toFixed(0)}/100`} delta={gr.avg_ips} />
       </KpiRow>
       <KpiRow>
         <KpiCard label="Avg age" value={num(k.avg_age).toFixed(0)} />
-        <KpiCard label="Mortgage holders" value={`${(num(k.pct_mortgage) * 100).toFixed(0)}%`} delta={gr.pct_mortgage} />
+        <KpiCard label="Home-financing holders" value={`${(num(k.pct_mortgage) * 100).toFixed(0)}%`} delta={gr.pct_mortgage} />
         <KpiCard label="30-day card spend" value={money(k.total_card_spend)} delta={gr.total_card_spend} />
-        <KpiCard label="Loan-to-savings" value={num(k.ltv).toFixed(2)} delta={gr.ltv} />
+        <KpiCard label="Financing-to-savings" value={num(k.ltv).toFixed(2)} delta={gr.ltv} />
       </KpiRow>
 
       <Insight>
