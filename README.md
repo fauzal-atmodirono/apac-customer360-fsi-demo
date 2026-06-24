@@ -118,11 +118,10 @@ tags via `setCategory`) + `datacatalog.viewer` + per-tag fine-grained reader + a
 
 `webapp/` is a **Next.js (App Router, TypeScript) Progressive Web App** — the polished,
 installable dashboard. Light-corporate theme via Tailwind + shadcn/ui, charts via Recharts,
-the Indonesia map via MapLibre (token-free). A browser can't reach BigQuery, so Next.js API
-route handlers (`app/api/<page>`) query it server-side using `lib/queries.ts` (the same SQL
-ported from `visualization/queries.py`) and `lib/bigquery.ts` (ADC for cleartext; a
-`google-auth` **Impersonated** client for the masked-reader SA). Serwist provides the service
-worker + `app/manifest.ts` for installability.
+the Malaysia map via MapLibre (token-free). A browser can't reach BigQuery, so Next.js API
+route handlers (`app/api/<page>`) query it server-side using `lib/queries.ts` and
+`lib/bigquery.ts` (ADC for cleartext; a `google-auth` **Impersonated** client for the
+masked-reader SA). Serwist provides the service worker + `app/manifest.ts` for installability.
 
 ```bash
 cd webapp
@@ -189,37 +188,6 @@ One-time setup (only you can create the OAuth client):
 Local dev: put `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `ALLOWED_DOMAIN` in
 `webapp/.env.local`. For real per-viewer BigQuery masking (vs the demo's service-account
 identity), exchange the Google token for per-user BigQuery access in `lib/bigquery.ts`.
-
-## Visualization (Streamlit dashboard — legacy/reference)
-
-> Superseded by the PWA above; kept as a quick reference UI.
-
-
-An interactive dashboard over the live Gold mart lives in `visualization/`. It reads
-`demo_gold_analytics.mart_customer_360` (plus Silver tables) directly from BigQuery.
-
-```bash
-# Python 3.13 is recommended (Streamlit's pyarrow dep lacks 3.14 wheels):
-python3.13 -m venv .venv-viz && ./.venv-viz/bin/pip install -r visualization/requirements.txt
-make dashboard      # recommended — pre-mints the masked-reader token (see note)
-# or plain: ./.venv-viz/bin/streamlit run visualization/app.py
-```
-
-> The Governance page queries as the masked-reader SA via impersonation. Minting that
-> token *inside* Streamlit's request thread is pathologically slow, so `make dashboard`
-> mints it in the shell first and passes it as `$MASKED_TOKEN` (the app falls back to an
-> in-process mint if unset). Tokens last ~1h.
-
-Six pages: **Executive overview** (KPIs, segment mix, age distribution, tier×segment,
-portfolio composition), **Demographics** (region distribution, savings by region, income
-bands, tenure cohorts vs churn), **Churn risk** ($-at-risk metric, ATM cash-flight scatter, score
-distribution, risk-by-age, retention list), **Marketing / NBA** (categories, IPS
-distribution, category×segment, cross-sell map + HNW-no-mortgage list), **Spend & trends**
-(daily credit-vs-debit, weekly category mix, ATM trend from the transaction facts), and
-**Governance** — the same rows cleartext (your fine-grained identity) vs masked (the
-`c360-masked-reader` SA), proving column-level security flows into the BI layer. Each page
-carries an auto-computed **insight callout**. Theme lives in `.streamlit/config.toml`; query
-logic is isolated in `visualization/queries.py` so it can be tested without the UI.
 
 ## Best-practice notes & corrections to the source docs
 

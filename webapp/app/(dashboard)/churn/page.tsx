@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useApi } from "@/components/data";
 import { PageSkeleton, ErrorState } from "@/components/loading";
 import { PageHeader, Insight } from "@/components/insight";
@@ -65,7 +66,7 @@ export default function ChurnPage() {
 
       <DataTable title="Retention target list (HIGH / MEDIUM)" rows={data.list}
         columns={[
-          { key: "customer_id", label: "CIF" },
+          { key: "customer_id", label: "CIF", fmt: (v) => <Link href={`/customers/${v}`} className="text-primary hover:underline">{String(v)}</Link> },
           { key: "full_name", label: "Name" },
           { key: "band", label: "Band" },
           { key: "churn_risk_score", label: "Score", align: "right", fmt: (v) => num(v as number).toFixed(0) },

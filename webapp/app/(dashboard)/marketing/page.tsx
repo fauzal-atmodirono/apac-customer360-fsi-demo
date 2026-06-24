@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useApi } from "@/components/data";
 import { PageSkeleton, ErrorState } from "@/components/loading";
 import { PageHeader, Insight } from "@/components/insight";
@@ -57,13 +58,13 @@ export default function MarketingPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <DataTable title="HNW investor targets" rows={data.hnwTargets}
           columns={[
-            { key: "customer_id", label: "CIF" }, { key: "full_name", label: "Name" },
+            { key: "customer_id", label: "CIF", fmt: (v) => <Link href={`/customers/${v}`} className="text-primary hover:underline">{String(v)}</Link> }, { key: "full_name", label: "Name" },
             { key: "savings", label: "Savings", align: "right", fmt: (v) => money(v as number) },
             { key: "ips", label: "IPS", align: "right", fmt: (v) => num(v as number).toFixed(0) },
           ]} />
         <DataTable title="Mortgage cross-sell (HNW, no mortgage)" rows={data.hnwNoMortgage}
           columns={[
-            { key: "customer_id", label: "CIF" }, { key: "full_name", label: "Name" },
+            { key: "customer_id", label: "CIF", fmt: (v) => <Link href={`/customers/${v}`} className="text-primary hover:underline">{String(v)}</Link> }, { key: "full_name", label: "Name" },
             { key: "savings", label: "Savings", align: "right", fmt: (v) => money(v as number) },
             { key: "top_spending_category", label: "Top cat" },
           ]} />

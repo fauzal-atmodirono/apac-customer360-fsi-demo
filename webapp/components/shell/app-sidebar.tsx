@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, MapPin, TrendingDown, Megaphone, LineChart, ShieldCheck, Landmark,
+  LayoutDashboard, MapPin, TrendingDown, Megaphone, LineChart, ShieldCheck, Landmark, Users, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/executive", label: "Executive overview", icon: LayoutDashboard },
+  { href: "/customers", label: "Customers", icon: Users },
+  { href: "/personalization", label: "Personalization", icon: Sparkles },
   { href: "/demographics", label: "Demographics", icon: MapPin },
   { href: "/churn", label: "Churn risk", icon: TrendingDown },
   { href: "/marketing", label: "Marketing / NBA", icon: Megaphone },
@@ -31,7 +33,7 @@ export function AppSidebar({ userSlot }: { userSlot?: React.ReactNode }) {
       </div>
       <nav className="flex-1 space-y-1 px-3 py-2">
         {NAV.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href;
+          const active = pathname === href || pathname.startsWith(`${href}/`);
           return (
             <Link
               key={href}

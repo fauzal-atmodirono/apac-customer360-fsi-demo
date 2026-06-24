@@ -43,6 +43,37 @@ function churnRiskScoreSql() {
   ), 1)`;
 }
 
+// Hyper-personalization signal config (mart_personalization_signals). Discretionary
+// vs essential category split + financial-health weights, kept here as the single
+// source of truth alongside IPS/CHURN.
+const PERSONALIZATION = {
+  DISCRETIONARY: ["DINING", "TRAVEL", "ENTERTAINMENT", "DIGITAL", "RETAIL"],
+  ESSENTIAL: ["GROCERY", "UTILITY", "FUEL", "HEALTH", "TRANSPORT", "ATM"],
+  HEALTHY_BUFFER_MONTHS: 6, // savings covering 6+ months of spend = full buffer score
+  STRESSED_DSR: 0.5,        // debt-service ratio at/above which the score floors
+  SAVINGS_NORM: 100000,     // savings normalizer for the health score
+  W_BUFFER: 0.4, W_DSR: 0.4, W_SAVINGS: 0.2,
+};
+
+// Render a JS string array as a SQL IN-list literal: ['A','B'] -> "'A','B'".
+function inList(arr) {
+  return arr.map((v) => `'${v}'`).join(", ");
+}
+
+// SQL expression mapping an hour-of-day (0-23) to a daypart bucket. Single source
+// of truth shared by both transaction fact models. `hourExpr` is any SQL int expr.
+function timeOfDay(hourExpr) {
+  return `CASE
+    WHEN ${hourExpr} BETWEEN 0 AND 3   THEN 'Midnight'
+    WHEN ${hourExpr} BETWEEN 4 AND 6   THEN 'Early morning'
+    WHEN ${hourExpr} BETWEEN 7 AND 10  THEN 'Morning'
+    WHEN ${hourExpr} BETWEEN 11 AND 13 THEN 'Noon'
+    WHEN ${hourExpr} BETWEEN 14 AND 16 THEN 'Afternoon'
+    WHEN ${hourExpr} BETWEEN 17 AND 19 THEN 'Evening'
+    ELSE 'Night'
+  END`;
+}
+
 // Build a column definition that carries a BigQuery policy tag *only* when the
 // corresponding tag var is populated. This keeps `dataform compile` clean in a
 // bare checkout (no live taxonomy) while applying real column-level security
@@ -59,4 +90,4 @@ function piiColumn(description, tagKey) {
   return col;
 }
 
-module.exports = { POLICY_TAGS, IPS, CHURN, piiColumn, churnRiskScoreSql };
+module.exports = { POLICY_TAGS, IPS, CHURN, PERSONALIZATION, piiColumn, churnRiskScoreSql, timeOfDay, inList };

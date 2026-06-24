@@ -1,0 +1,147 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Per-customer hyper-personalization signals: RFM, spend intelligence, financial health, and Next-Best-Product propensity. PII-free (keyed by customer_id) so no policy tags are required.",
+  assertions: {
+    uniqueKey: ["customer_id"]
+  },
+  columns: {
+    customer_id: "Primary key (customer CIF).",
+    recency_days: "Days since the most recent card purchase (999 if none in window).",
+    frequency_90d: "Card purchase count over the trailing 90 days.",
+    monetary_90d: "Card purchase value over the trailing 90 days.",
+    r_score: "Recency quintile (1-5, 5 = most recent).",
+    f_score: "Frequency quintile (1-5, 5 = most frequent).",
+    m_score: "Monetary quintile (1-5, 5 = highest value).",
+    rfm_segment: "Behavioral segment from R & F (Champions/Loyal/At risk/Hibernating/...).",
+    avg_ticket: "Average card purchase value (90d).",
+    spend_velocity_pct: "Spend growth: last-30d vs prior-30d, percent.",
+    share_of_wallet: "Annualized card spend / annual income (0-1+).",
+    discretionary_ratio: "Discretionary spend / total card spend (90d).",
+    digital_share: "DIGITAL-category spend / total card spend (90d).",
+    distinct_categories: "Distinct spending categories used (90d).",
+    liquidity_buffer_months: "Savings / monthly card spend (months of cover).",
+    debt_service_ratio: "Monthly loan installments / monthly income.",
+    financial_health_score: "0-100 composite (buffer, debt-service, savings).",
+    financial_health_band: "Healthy / Moderate / Stretched.",
+    life_stage: "Inferred life stage (Early career / Family & home / Wealth accumulation / Pre-retirement).",
+    preferred_time_of_day: "Most frequent transaction daypart (for outreach timing).",
+    p_mortgage: "Next-Best-Product propensity 0-100: mortgage.",
+    p_term_deposit: "Next-Best-Product propensity 0-100: term deposit.",
+    p_card_upgrade: "Next-Best-Product propensity 0-100: premium/rewards card.",
+    p_investment: "Next-Best-Product propensity 0-100: investment / wealth.",
+    p_consolidation: "Next-Best-Product propensity 0-100: debt consolidation.",
+    nbp_top: "Highest-propensity next-best product.",
+    nbp_top_score: "Score of the top next-best product."
+  }
+}
+
+WITH tx AS (
+  SELECT customer_id, transaction_date AS d, time_of_day, spending_category AS cat, transaction_amount AS amt
+  FROM ${ref("fct_credit_card_transactions")} WHERE transaction_type = 'DEBIT'
+  UNION ALL
+  SELECT customer_id, transaction_date, time_of_day, spending_category, transaction_amount
+  FROM ${ref("fct_debit_card_transactions")} WHERE transaction_type = 'DEBIT'
+),
+
+tx_agg AS (
+  SELECT
+    customer_id,
+    COALESCE(DATE_DIFF(CURRENT_DATE(), MAX(d), DAY), 999) AS recency_days,
+    COUNTIF(d >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)) AS frequency_90d,
+    SUM(IF(d >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY), amt, 0)) AS monetary_90d,
+    SUM(IF(d >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY), amt, 0)) AS spend_last_30,
+    SUM(IF(d BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 31 DAY), amt, 0)) AS spend_prior_30,
+    COUNT(DISTINCT IF(d >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY), cat, NULL)) AS distinct_categories,
+    SUM(IF(d >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND cat IN (${constants.inList(constants.PERSONALIZATION.DISCRETIONARY)}), amt, 0)) AS discretionary_spend,
+    SUM(IF(d >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND cat = 'DIGITAL', amt, 0)) AS digital_spend,
+    APPROX_TOP_COUNT(IF(d >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY), time_of_day, NULL), 1)[OFFSET(0)].value AS preferred_time_of_day
+  FROM tx GROUP BY 1
+),
+
+loans AS (
+  SELECT customer_id, SUM(monthly_installment) AS monthly_installments
+  FROM ${ref("dim_loans")} GROUP BY 1
+),
+
+raw AS (
+  SELECT
+    c.customer_id, c.age, c.annual_income, c.customer_segment,
+    c.total_savings_balance, c.total_deposit_balance, c.total_card_spend_last_30_days,
+    c.cc_spend_last_30_days, c.has_active_mortgage, c.total_loan_outstanding,
+    c.debt_to_deposit_ratio, c.investment_propensity_score, c.propensity_score_segment,
+    COALESCE(t.recency_days, 999) AS recency_days,
+    COALESCE(t.frequency_90d, 0) AS frequency_90d,
+    COALESCE(t.monetary_90d, 0) AS monetary_90d,
+    COALESCE(t.distinct_categories, 0) AS distinct_categories,
+    COALESCE(t.preferred_time_of_day, 'None') AS preferred_time_of_day,
+    SAFE_DIVIDE(t.monetary_90d, NULLIF(t.frequency_90d, 0)) AS avg_ticket,
+    SAFE_DIVIDE(t.spend_last_30 - t.spend_prior_30, NULLIF(t.spend_prior_30, 0)) * 100 AS spend_velocity_pct,
+    SAFE_DIVIDE(c.total_card_spend_last_30_days * 12, NULLIF(c.annual_income, 0)) AS share_of_wallet,
+    SAFE_DIVIDE(t.discretionary_spend, NULLIF(t.monetary_90d, 0)) AS discretionary_ratio,
+    SAFE_DIVIDE(t.digital_spend, NULLIF(t.monetary_90d, 0)) AS digital_share,
+    SAFE_DIVIDE(c.total_savings_balance, NULLIF(c.total_card_spend_last_30_days, 0)) AS liquidity_buffer_months,
+    SAFE_DIVIDE(COALESCE(lo.monthly_installments, 0), NULLIF(c.annual_income / 12, 0)) AS debt_service_ratio
+  FROM ${ref("mart_customer_360")} c
+  LEFT JOIN tx_agg t ON c.customer_id = t.customer_id
+  LEFT JOIN loans lo ON c.customer_id = lo.customer_id
+),
+
+scored AS (
+  SELECT
+    *,
+    NTILE(5) OVER (ORDER BY recency_days DESC) AS r_score,
+    NTILE(5) OVER (ORDER BY frequency_90d ASC) AS f_score,
+    NTILE(5) OVER (ORDER BY monetary_90d ASC) AS m_score,
+    -- Financial-health composite (0-100).
+    ROUND(100 * (
+        ${constants.PERSONALIZATION.W_BUFFER} * COALESCE(LEAST(1.0, liquidity_buffer_months / ${constants.PERSONALIZATION.HEALTHY_BUFFER_MONTHS}), IF(total_savings_balance > 0, 1.0, 0))
+      + ${constants.PERSONALIZATION.W_DSR}    * (1 - LEAST(1.0, COALESCE(debt_service_ratio, 0) / ${constants.PERSONALIZATION.STRESSED_DSR}))
+      + ${constants.PERSONALIZATION.W_SAVINGS} * LEAST(1.0, total_savings_balance / ${constants.PERSONALIZATION.SAVINGS_NORM})
+    )) AS financial_health_score,
+    -- Next-Best-Product propensity scores (0-100, heuristic).
+    IF(has_active_mortgage, 5, CAST(ROUND(LEAST(100, 20 + LEAST(50, total_savings_balance / 5000) + IF(age BETWEEN 28 AND 50, 25, 0))) AS INT64)) AS p_mortgage,
+    CAST(ROUND(LEAST(100, investment_propensity_score * 0.6 + IF(total_deposit_balance = 0 AND total_savings_balance > 20000, 30, 0) + IF(propensity_score_segment = 'HNW_INVESTOR', 20, 0))) AS INT64) AS p_term_deposit,
+    CAST(ROUND(LEAST(100, cc_spend_last_30_days / 100 + IF(propensity_score_segment = 'DIGITAL_SHOPPER', 30, 0))) AS INT64) AS p_card_upgrade,
+    CAST(ROUND(LEAST(100, investment_propensity_score * 0.7 + LEAST(30, total_savings_balance / 10000))) AS INT64) AS p_investment,
+    CAST(ROUND(LEAST(100, COALESCE(debt_service_ratio, 0) * 120 + IF(propensity_score_segment = 'LEVERAGED_BORROWER', 30, 0) + IF(debt_to_deposit_ratio > 5, 20, 0))) AS INT64) AS p_consolidation
+  FROM raw
+)
+
+SELECT
+  customer_id, recency_days, frequency_90d, ROUND(monetary_90d, 2) AS monetary_90d,
+  r_score, f_score, m_score,
+  CASE
+    WHEN r_score >= 4 AND f_score >= 4 THEN 'Champions'
+    WHEN r_score >= 3 AND f_score >= 3 THEN 'Loyal'
+    WHEN r_score >= 4 AND f_score <= 2 THEN 'New / Promising'
+    WHEN r_score = 3 AND f_score <= 2 THEN 'Potential'
+    WHEN r_score <= 2 AND f_score >= 3 THEN 'At risk'
+    WHEN r_score <= 2 AND f_score <= 2 THEN 'Hibernating'
+    ELSE 'Needs attention'
+  END AS rfm_segment,
+  ROUND(avg_ticket, 2) AS avg_ticket,
+  ROUND(spend_velocity_pct, 1) AS spend_velocity_pct,
+  ROUND(share_of_wallet, 3) AS share_of_wallet,
+  ROUND(discretionary_ratio, 3) AS discretionary_ratio,
+  ROUND(digital_share, 3) AS digital_share,
+  distinct_categories,
+  ROUND(liquidity_buffer_months, 1) AS liquidity_buffer_months,
+  ROUND(debt_service_ratio, 3) AS debt_service_ratio,
+  financial_health_score,
+  CASE WHEN financial_health_score >= 66 THEN 'Healthy' WHEN financial_health_score >= 33 THEN 'Moderate' ELSE 'Stretched' END AS financial_health_band,
+  CASE
+    WHEN age < 30 THEN 'Early career'
+    WHEN age < 45 THEN IF(has_active_mortgage, 'Family & home', 'Establishing')
+    WHEN age < 60 THEN 'Wealth accumulation'
+    ELSE 'Pre-retirement'
+  END AS life_stage,
+  preferred_time_of_day,
+  p_mortgage, p_term_deposit, p_card_upgrade, p_investment, p_consolidation,
+  (SELECT product FROM UNNEST([
+     STRUCT('Mortgage' AS product, p_mortgage AS s), STRUCT('Term deposit', p_term_deposit),
+     STRUCT('Premium card', p_card_upgrade), STRUCT('Investment', p_investment),
+     STRUCT('Debt consolidation', p_consolidation)
+   ]) ORDER BY s DESC LIMIT 1) AS nbp_top,
+  GREATEST(p_mortgage, p_term_deposit, p_card_upgrade, p_investment, p_consolidation) AS nbp_top_score
+FROM scored

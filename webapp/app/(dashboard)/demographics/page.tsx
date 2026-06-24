@@ -8,7 +8,7 @@ import { ChartCard, HBars, VBars } from "@/components/charts";
 import { Card } from "@/components/ui/card";
 import { money, num } from "@/lib/format";
 
-const IndonesiaMap = dynamic(() => import("@/components/indonesia-map"), { ssr: false });
+const MalaysiaMap = dynamic(() => import("@/components/malaysia-map"), { ssr: false });
 
 type Demo = {
   regions: { region: string; customers: number; total_savings: number; avg_ips: number }[];
@@ -39,11 +39,12 @@ export default function DemographicsPage() {
       </Insight>
 
       <Card className="p-5">
-        <h3 className="mb-3 text-sm font-semibold tracking-tight">Customer footprint across Indonesia</h3>
-        <IndonesiaMap regions={data.regions} />
+        <h3 className="mb-3 text-sm font-semibold tracking-tight">Customer footprint across Malaysia</h3>
+        <MalaysiaMap regions={data.regions} />
         <p className="mt-3 text-xs text-muted-foreground">
-          💡 Bubble size = customers. The book is anchored in <b className="text-foreground">Java</b>; outer-island metros
-          are lighter-touch — candidates for a digital-first acquisition play.
+          💡 Bubble size = customers. The book is anchored in the <b className="text-foreground">Klang Valley</b> and
+          Peninsular Malaysia; East Malaysia metros (Kota Kinabalu, Kuching) are lighter-touch — candidates for a
+          digital-first acquisition play.
         </p>
       </Card>
 

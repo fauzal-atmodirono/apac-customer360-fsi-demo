@@ -31,8 +31,8 @@ from faker import Faker
 SCHEMAS: dict[str, list[str]] = {
     "AS400_CUST_MAST": ["CMCIF", "CMNAME", "CMADR1", "CMDOB", "CMSEG", "CMPHNE", "CMRGN", "CMSINCE", "CMINC"],
     "AS400_SVDP_MAST": ["ACCNO", "AC_CIF", "ACTYPE", "ACBAL", "ACOPDT", "ACSTAT"],
-    "AS400_CC_TXN": ["TXNID", "CRDNO", "CC_CIF", "TXNDT", "TXNAMT", "TXN_CAT", "TXNTYP"],
-    "AS400_DC_TXN": ["TXNID", "DCRDNO", "DC_CIF", "DC_ACCNO", "TXNDT", "TXNAMT", "TXN_CAT", "TXNTYP"],
+    "AS400_CC_TXN": ["TXNID", "CRDNO", "CC_CIF", "TXNDT", "TXNTM", "TXNAMT", "TXN_CAT", "TXNTYP"],
+    "AS400_DC_TXN": ["TXNID", "DCRDNO", "DC_CIF", "DC_ACCNO", "TXNDT", "TXNTM", "TXNAMT", "TXN_CAT", "TXNTYP"],
     "AS400_LOAN_MAST": ["LN_NO", "LN_CIF", "LNTYPE", "LN_AMT", "LN_BAL", "LNMTHP", "LN_DUE"],
 }
 
@@ -40,14 +40,20 @@ SPEND_CATEGORIES = ["RETAIL", "GROCERY", "TRAVEL", "DINING", "DIGITAL", "UTILITY
 DEBIT_CATEGORIES = ["RETAIL", "GROCERY", "DINING", "FUEL", "ATM", "UTILITY", "TRANSPORT"]
 LOAN_TYPES = ["MORTGAGE", "CAR", "PERSONAL", "EDUCATION", "CREDIT_LINE"]
 LOAN_PRINCIPAL = {"MORTGAGE": 320_000, "CAR": 35_000, "PERSONAL": 15_000, "EDUCATION": 25_000, "CREDIT_LINE": 10_000}
-# Regions (asia-southeast2 / Indonesia context), weighted toward the capital.
-REGIONS = ["JAKARTA", "JAKARTA", "JAKARTA", "SURABAYA", "SURABAYA", "BANDUNG",
-           "MEDAN", "SEMARANG", "MAKASSAR", "DENPASAR", "BATAM"]
+# Regions (Malaysia), weighted toward the capital / Klang Valley.
+REGIONS = ["KUALA LUMPUR", "KUALA LUMPUR", "KUALA LUMPUR", "JOHOR BAHRU", "JOHOR BAHRU",
+           "GEORGE TOWN", "IPOH", "SHAH ALAM", "KOTA KINABALU", "KUCHING", "MALACCA"]
 INCOME_BY_TIER = {"MASS": (20_000, 90_000), "AFFLUENT": (90_000, 250_000), "HNW": (250_000, 1_500_000)}
 
 
 def yyyymmdd(d: date) -> int:
     return int(d.strftime("%Y%m%d"))
+
+
+# Realistic intraday card-spend curve: light overnight, lunch (12) + evening (19) peaks.
+TXN_HOURS = list(range(24))
+TXN_HOUR_WEIGHTS = [1, 1, 1, 1, 2, 3, 5, 8, 12, 14, 14, 16,
+                    20, 18, 14, 13, 13, 15, 18, 20, 16, 12, 7, 3]
 
 
 @dataclass
@@ -60,9 +66,12 @@ class GeneratedRows:
 
 
 class Generator:
-    def __init__(self, fake: Faker, rng: random.Random, today: date):
+    def __init__(self, fake: Faker, rng: random.Random, today: date, time_rng: random.Random):
         self.fake = fake
         self.rng = rng
+        # Separate RNG stream for transaction times, so adding TXNTM does not perturb the
+        # main rng sequence (existing balances/regions/dates stay identical across regen).
+        self.time_rng = time_rng
         self.today = today
         self.rows = GeneratedRows()
         self._cif_seq = 19283740
@@ -107,13 +116,18 @@ class Generator:
         self.rows.accounts.append([account_id, cif, actype, round(balance, 2), yyyymmdd(open_date), status])
         return account_id
 
+    def rand_txn_time(self) -> int:
+        """HHMMSS time-of-day, drawn from the dedicated time_rng (realistic intraday curve)."""
+        hour = self.time_rng.choices(TXN_HOURS, weights=TXN_HOUR_WEIGHTS)[0]
+        return hour * 10000 + self.time_rng.randint(0, 59) * 100 + self.time_rng.randint(0, 59)
+
     def add_card_txns(self, cif, n, categories, max_amt, max_days_back=90) -> None:
         card = self.masked_card()
         for _ in range(n):
             txn_date = self.today - timedelta(days=self.rng.randint(0, max_days_back))
             txntyp = "D" if self.rng.random() > 0.15 else "C"
             self.rows.cards.append([
-                self.next_txn_id(), card, cif, yyyymmdd(txn_date),
+                self.next_txn_id(), card, cif, yyyymmdd(txn_date), self.rand_txn_time(),
                 round(self.rng.uniform(8.0, max_amt), 2), self.rng.choice(categories), txntyp,
             ])
 
@@ -123,7 +137,7 @@ class Generator:
             txn_date = self.today - timedelta(days=self.rng.randint(0, 90))
             txntyp = "D" if self.rng.random() > 0.08 else "C"
             self.rows.debit_cards.append([
-                self.next_dc_txn_id(), card, cif, account_id, yyyymmdd(txn_date),
+                self.next_dc_txn_id(), card, cif, account_id, yyyymmdd(txn_date), self.rand_txn_time(),
                 round(self.rng.uniform(5.0, max_amt), 2), self.rng.choice(categories), txntyp,
             ])
 
@@ -187,6 +201,7 @@ class Generator:
             for _ in range(r.randint(6, 14)):
                 d = self.today - timedelta(days=r.randint(0, 30))
                 self.rows.debit_cards.append([self.next_dc_txn_id(), card, cif, sv, yyyymmdd(d),
+                                              self.rand_txn_time(),
                                               round(r.uniform(20, 200), 2), "ATM", "D"])
         else:  # standard retail — varied
             seg = r.choices(["MASS", "AFFLUENT"], weights=[0.85, 0.15])[0]
@@ -214,27 +229,27 @@ class Generator:
     # -- personas (fixed CIFs) ---------------------------------------------
     def add_personas(self) -> None:
         hnw = "0010000001"
-        self.add_customer(hnw, "HNW", date(1968, 4, 12), "JAKARTA", date(2009, 3, 1), 680_000)
+        self.add_customer(hnw, "HNW", date(1968, 4, 12), "KUALA LUMPUR", date(2009, 3, 1), 680_000)
         hnw_sv = self.add_account(hnw, "SV", 420_000.00)
         self.add_account(hnw, "DP", 150_000.00)
         self.add_card_txns(hnw, 6, ["TRAVEL", "DINING"], 900)
         self.add_debit_txns(hnw, hnw_sv, 8, ["DINING", "ATM", "FUEL"], 300)
 
         sqz = "0010000002"
-        self.add_customer(sqz, "MASS", date(1985, 9, 2), "SURABAYA", date(2016, 7, 15), 64_000)
+        self.add_customer(sqz, "MASS", date(1985, 9, 2), "JOHOR BAHRU", date(2016, 7, 15), 64_000)
         sqz_sv = self.add_account(sqz, "SV", 3_500.00)
         self.add_loan(sqz, "MORTGAGE", 350_000.00, 285_320.10, 1850.00)
         self.add_card_txns(sqz, 24, ["GROCERY", "UTILITY", "FUEL"], 400)
         self.add_debit_txns(sqz, sqz_sv, 30, ["GROCERY", "ATM", "TRANSPORT", "FUEL"], 150)
 
         mil = "0010000003"
-        self.add_customer(mil, "MASS", date(1995, 6, 20), "BANDUNG", date(2020, 1, 10), 48_000)
+        self.add_customer(mil, "MASS", date(1995, 6, 20), "GEORGE TOWN", date(2020, 1, 10), 48_000)
         mil_sv = self.add_account(mil, "SV", 18_000.00)
         self.add_debit_txns(mil, mil_sv, 18, ["RETAIL", "DINING", "TRANSPORT"], 120)
         card = self.masked_card()
         for _ in range(40):
             d = self.today - timedelta(days=self.rng.randint(0, 25))
-            self.rows.cards.append([self.next_txn_id(), card, mil, yyyymmdd(d),
+            self.rows.cards.append([self.next_txn_id(), card, mil, yyyymmdd(d), self.rand_txn_time(),
                                     round(self.rng.uniform(120.0, 350.0), 2),
                                     self.rng.choice(["DIGITAL", "RETAIL", "DINING"]), "D"])
 
@@ -282,11 +297,12 @@ def main() -> None:
     args = p.parse_args()
 
     rng = random.Random(args.seed)
+    time_rng = random.Random(args.seed + 7)
     fake = Faker()
     Faker.seed(args.seed)
     today = date.fromisoformat(args.today) if args.today else date.today()
 
-    gen = Generator(fake, rng, today)
+    gen = Generator(fake, rng, today, time_rng)
     gen.add_personas()
     gen.add_population(args.customers)
 
