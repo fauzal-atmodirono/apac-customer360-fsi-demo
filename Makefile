@@ -55,14 +55,5 @@ df-run: ## Run Silver+Gold+assertions via Cloud Workflows (reads policy-tag vars
 verify: ## Print the demo verification queries to run in BigQuery
 	@echo "Run analytics/customer_360_queries.sql in BigQuery as different identities (see README)."
 
-dashboard-venv: ## Create the dashboard venv (Python 3.13 recommended for wheel coverage)
-	$(PY) -m venv .venv-viz && ./.venv-viz/bin/pip install -q -r visualization/requirements.txt
-
-MASKED_SA ?= c360-masked-reader@$(PROJECT).iam.gserviceaccount.com
-
-dashboard: ## Launch the Streamlit dashboard (pre-mints the masked-reader token for the governance page)
-	MASKED_TOKEN="$$(gcloud auth print-access-token --impersonate-service-account=$(MASKED_SA))" \
-	  ./.venv-viz/bin/streamlit run visualization/app.py
-
-clean: ## Remove generated data + local venvs
-	rm -rf $(OUT_DIR) .venv .venv-viz
+clean: ## Remove generated data + local venv
+	rm -rf $(OUT_DIR) .venv

@@ -10,6 +10,7 @@ export const MASKED_SA =
   process.env.MASKED_SA ?? "c360-masked-reader@nbs-playground-data-analytics.iam.gserviceaccount.com";
 
 export const MART = `\`${PROJECT}.${GOLD}.mart_customer_360\``;
+export const PERS = `\`${PROJECT}.${GOLD}.mart_personalization_signals\``;
 export const DIM_CUSTOMERS = `\`${PROJECT}.${SILVER}.dim_customers\``;
 export const FCT_CC = `\`${PROJECT}.${SILVER}.fct_credit_card_transactions\``;
 export const FCT_DC = `\`${PROJECT}.${SILVER}.fct_debit_card_transactions\``;
@@ -47,13 +48,13 @@ const TTL = 60_000;
 
 export async function runQuery<T = Record<string, unknown>>(
   sql: string,
-  opts: { masked?: boolean } = {},
+  opts: { masked?: boolean; params?: Record<string, unknown> } = {},
 ): Promise<T[]> {
-  const key = `${opts.masked ? "m" : "d"}:${sql}`;
+  const key = `${opts.masked ? "m" : "d"}:${sql}:${opts.params ? JSON.stringify(opts.params) : ""}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL) return hit.rows as T[];
   const client = opts.masked ? await maskedClient() : defaultClient();
-  const [rows] = await client.query({ query: sql, location: LOCATION });
+  const [rows] = await client.query({ query: sql, location: LOCATION, params: opts.params });
   cache.set(key, { at: Date.now(), rows });
   return rows as T[];
 }

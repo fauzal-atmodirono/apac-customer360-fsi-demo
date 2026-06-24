@@ -1,7 +1,8 @@
 import "server-only";
-import { runQuery, PROJECT, GOLD, MART, DIM_CUSTOMERS, FCT_CC, FCT_DC } from "./bigquery";
+import { runQuery, PROJECT, GOLD, SILVER, MART, PERS, DIM_CUSTOMERS, FCT_CC, FCT_DC } from "./bigquery";
+import { money } from "./format";
 
-// All SQL is ported 1:1 from visualization/queries.py (same BigQuery Standard SQL).
+// Server-side BigQuery Standard SQL for the dashboard API routes.
 // Aggregates are CAST to FLOAT64 so the JSON carries plain JS numbers.
 const q = runQuery;
 
@@ -122,8 +123,15 @@ export async function marketingData() {
   return { categories, ipsDist, catBySegment, crossSell, hnwTargets, hnwNoMortgage };
 }
 
+const TX90 = `WITH tx AS (
+  SELECT transaction_date AS d, time_of_day, transaction_hour AS hr, day_of_week, day_of_week_num, day_group, transaction_amount AS amt
+  FROM ${FCT_CC} WHERE transaction_type='DEBIT'
+  UNION ALL
+  SELECT transaction_date, time_of_day, transaction_hour, day_of_week, day_of_week_num, day_group, transaction_amount
+  FROM ${FCT_DC} WHERE transaction_type='DEBIT')`;
+
 export async function trendsData() {
-  const [daily, weekly, atm] = await Promise.all([
+  const [daily, weekly, atm, byTimeOfDay, byHour, byDayGroup, byDayOfWeek] = await Promise.all([
     q(`WITH tx AS (
          SELECT transaction_date AS d, 'Credit' AS channel, transaction_amount AS amt FROM ${FCT_CC} WHERE transaction_type='DEBIT'
          UNION ALL SELECT transaction_date, 'Debit', transaction_amount FROM ${FCT_DC} WHERE transaction_type='DEBIT')
@@ -140,8 +148,19 @@ export async function trendsData() {
          COUNT(*) AS withdrawals, CAST(SUM(transaction_amount) AS FLOAT64) AS amount
        FROM ${FCT_DC} WHERE is_atm_withdrawal AND transaction_date>=DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
        GROUP BY week ORDER BY week`),
+    // --- transaction timing (90d, cc+dc purchases) ---
+    q(`${TX90} SELECT time_of_day, COUNT(*) AS txns, CAST(SUM(amt) AS FLOAT64) AS spend
+       FROM tx WHERE d>=DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) GROUP BY time_of_day`),
+    q(`${TX90} SELECT hr AS hour, COUNT(*) AS txns, CAST(SUM(amt) AS FLOAT64) AS spend
+       FROM tx WHERE d>=DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) GROUP BY hour ORDER BY hour`),
+    q(`${TX90} SELECT day_group, COUNT(*) AS txns, CAST(SUM(amt) AS FLOAT64) AS spend,
+              COUNT(DISTINCT d) AS active_days
+       FROM tx WHERE d>=DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) GROUP BY day_group`),
+    q(`${TX90} SELECT day_of_week, ANY_VALUE(day_of_week_num) AS dow_num,
+              COUNT(*) AS txns, CAST(SUM(amt) AS FLOAT64) AS spend
+       FROM tx WHERE d>=DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) GROUP BY day_of_week ORDER BY dow_num`),
   ]);
-  return { daily, weekly, atm };
+  return { daily, weekly, atm, byTimeOfDay, byHour, byDayGroup, byDayOfWeek };
 }
 
 const PII_SAMPLE = (limit: number) => `
@@ -156,4 +175,107 @@ export async function governanceData() {
     q(PII_SAMPLE(8), { masked: true }),
   ]);
   return { cleartext, masked };
+}
+
+// --- Individual customer (list + detail) -------------------------------------
+export async function customerList() {
+  return q(`
+    SELECT customer_id, full_name, customer_segment, region,
+           CAST(total_savings_balance AS FLOAT64) AS savings,
+           CAST(investment_propensity_score AS FLOAT64) AS ips,
+           propensity_score_segment, churn_risk_segment
+    FROM ${MART}
+    ORDER BY total_savings_balance DESC
+  `);
+}
+
+type Mart = Record<string, number | string | boolean | null>;
+
+function nextBestActions(m: Mart) {
+  const out: { title: string; reason: string; priority: "High" | "Medium" | "Low" }[] = [];
+  const seg = String(m.propensity_score_segment);
+  const ips = Number(m.investment_propensity_score);
+  const savings = Number(m.total_savings_balance);
+  const deposits = Number(m.total_deposit_balance);
+  const ccSpend = Number(m.cc_spend_last_30_days);
+  const ddr = Number(m.debt_to_deposit_ratio);
+  const churn = String(m.churn_risk_segment);
+
+  if (churn === "HIGH" || churn === "MEDIUM")
+    out.push({ title: "Retention outreach", reason: `Churn risk is ${churn} — proactive loyalty offer / fee waiver before defection.`, priority: churn === "HIGH" ? "High" : "Medium" });
+  if (!m.has_active_mortgage && savings > 100000)
+    out.push({ title: "Home-loan cross-sell", reason: `Holds ${money(savings)} in savings with no mortgage — strong home-lending lead.`, priority: "High" });
+  if (seg === "HNW_INVESTOR" || ips >= 70)
+    out.push({ title: "Term deposit / wealth advisory", reason: `Investment propensity ${ips.toFixed(0)}/100 — pitch high-yield term deposit or advisory.`, priority: "High" });
+  if (deposits === 0 && savings > 20000)
+    out.push({ title: "Move idle cash to term deposit", reason: `${money(savings)} savings but no term deposit — convert idle balances.`, priority: "Medium" });
+  if (seg === "DIGITAL_SHOPPER" || ccSpend > 5000)
+    out.push({ title: "Premium rewards card", reason: `High card spend (${money(ccSpend)}/30d) — upgrade to a cashback/rewards card.`, priority: "Medium" });
+  if (seg === "LEVERAGED_BORROWER" || ddr > 5)
+    out.push({ title: "Debt consolidation", reason: `Debt-to-deposit ratio ${ddr.toFixed(1)} — offer restructuring / consolidation.`, priority: "High" });
+  if (!out.length)
+    out.push({ title: "Maintain & monitor", reason: "Healthy, stable profile — standard engagement cadence.", priority: "Low" });
+  return out;
+}
+
+export async function customerDetail(id: string) {
+  const p = { params: { id } };
+  const [mart, dim, accounts, loans, trend, categories, recent, signals] = await Promise.all([
+    q(`SELECT * FROM ${MART} WHERE customer_id = @id`, p),
+    q(`SELECT address, customer_since FROM ${DIM_CUSTOMERS} WHERE customer_id = @id`, p),
+    q(`SELECT account_id, account_type, CAST(balance AS FLOAT64) AS balance, status_desc,
+              CAST(open_date AS STRING) AS open_date
+       FROM \`${PROJECT}.${SILVER}.dim_accounts\` WHERE customer_id = @id ORDER BY balance DESC`, p),
+    q(`SELECT loan_id, loan_type, CAST(principal_amount AS FLOAT64) AS principal,
+              CAST(outstanding_balance AS FLOAT64) AS outstanding,
+              CAST(monthly_installment AS FLOAT64) AS monthly, CAST(next_due_date AS STRING) AS next_due
+       FROM \`${PROJECT}.${SILVER}.dim_loans\` WHERE customer_id = @id ORDER BY outstanding DESC`, p),
+    q(`WITH tx AS (
+         SELECT transaction_date AS d, 'Credit' AS channel, transaction_amount AS amt FROM ${FCT_CC} WHERE customer_id=@id AND transaction_type='DEBIT'
+         UNION ALL SELECT transaction_date, 'Debit', transaction_amount FROM ${FCT_DC} WHERE customer_id=@id AND transaction_type='DEBIT')
+       SELECT CAST(DATE_TRUNC(d, WEEK) AS STRING) AS week, channel, CAST(SUM(amt) AS FLOAT64) AS spend
+       FROM tx WHERE d >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) GROUP BY week, channel ORDER BY week`, p),
+    q(`WITH tx AS (
+         SELECT spending_category AS cat, transaction_amount AS amt FROM ${FCT_CC} WHERE customer_id=@id AND transaction_type='DEBIT'
+         UNION ALL SELECT spending_category, transaction_amount FROM ${FCT_DC} WHERE customer_id=@id AND transaction_type='DEBIT')
+       SELECT cat AS category, CAST(SUM(amt) AS FLOAT64) AS spend FROM tx GROUP BY category ORDER BY spend DESC`, p),
+    q(`SELECT * FROM (
+         SELECT CAST(transaction_date AS STRING) AS date, 'Credit' AS channel, spending_category AS category,
+                CAST(transaction_amount AS FLOAT64) AS amount, transaction_type AS type FROM ${FCT_CC} WHERE customer_id=@id
+         UNION ALL SELECT CAST(transaction_date AS STRING), 'Debit', spending_category,
+                CAST(transaction_amount AS FLOAT64), transaction_type FROM ${FCT_DC} WHERE customer_id=@id)
+       ORDER BY date DESC LIMIT 15`, p),
+    q(`SELECT * FROM ${PERS} WHERE customer_id = @id`, p),
+  ]);
+  const profile = mart[0] ? { ...(mart[0] as Mart), ...(dim[0] ?? {}) } : null;
+  return {
+    profile,
+    accounts, loans, trend, categories, recent,
+    signals: signals[0] ?? null,
+    nba: profile ? nextBestActions(mart[0] as Mart) : [],
+  };
+}
+
+export async function personalizationData() {
+  const [rfm, health, nbp, sow, kpis] = await Promise.all([
+    q(`SELECT rfm_segment, COUNT(*) AS customers FROM ${PERS} GROUP BY 1 ORDER BY customers DESC`),
+    q(`SELECT financial_health_band AS band, COUNT(*) AS customers FROM ${PERS} GROUP BY 1`),
+    q(`SELECT nbp_top AS product, COUNT(*) AS customers FROM ${PERS} GROUP BY 1 ORDER BY customers DESC`),
+    q(`SELECT CASE
+              WHEN share_of_wallet < 0.1 THEN '0-10%'
+              WHEN share_of_wallet < 0.25 THEN '10-25%'
+              WHEN share_of_wallet < 0.5 THEN '25-50%'
+              WHEN share_of_wallet < 1 THEN '50-100%'
+              ELSE '100%+' END AS band,
+            COUNT(*) AS customers
+       FROM ${PERS} GROUP BY 1`),
+    q(`SELECT CAST(AVG(financial_health_score) AS FLOAT64) AS avg_health,
+              CAST(AVG(share_of_wallet) AS FLOAT64) AS avg_sow,
+              COUNTIF(rfm_segment IN ('At risk','Hibernating')) AS at_risk,
+              COUNTIF(financial_health_band='Stretched') AS stretched
+       FROM ${PERS}`),
+  ]);
+  const SOW_ORDER = ["0-10%", "10-25%", "25-50%", "50-100%", "100%+"];
+  (sow as { band: string }[]).sort((a, b) => SOW_ORDER.indexOf(a.band) - SOW_ORDER.indexOf(b.band));
+  return { rfm, health, nbp, sow, kpis: kpis[0] };
 }

@@ -1,11 +1,11 @@
-export function money(x: number | string | null | undefined): string {
+export function money(x: unknown): string {
   const n = Number(x ?? 0);
   if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
   if (Math.abs(n) >= 1e3) return `$${(n / 1e3).toFixed(0)}K`;
   return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
-export function num(x: number | string | null | undefined): number {
+export function num(x: unknown): number {
   return Number(x ?? 0);
 }
 

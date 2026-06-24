@@ -5,19 +5,20 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { money } from "@/lib/format";
 
 const COORDS: Record<string, [number, number]> = {
-  JAKARTA: [-6.2088, 106.8456], SURABAYA: [-7.2575, 112.7521], BANDUNG: [-6.9175, 107.6191],
-  MEDAN: [3.5952, 98.6722], SEMARANG: [-6.9667, 110.4167], MAKASSAR: [-5.1477, 119.4327],
-  DENPASAR: [-8.65, 115.2167], BATAM: [1.0456, 104.0305],
+  "KUALA LUMPUR": [3.139, 101.6869], "JOHOR BAHRU": [1.4927, 103.7414],
+  "GEORGE TOWN": [5.4141, 100.3288], "IPOH": [4.5975, 101.0901],
+  "SHAH ALAM": [3.0733, 101.5185], "KOTA KINABALU": [5.9804, 116.0735],
+  "KUCHING": [1.5535, 110.3593], "MALACCA": [2.1896, 102.2501],
 };
 
 type Region = { region: string; customers: number; total_savings: number; avg_ips: number };
 
-export default function IndonesiaMap({ regions }: { regions: Region[] }) {
+export default function MalaysiaMap({ regions }: { regions: Region[] }) {
   const max = Math.max(...regions.map((r) => Number(r.customers)), 1);
   return (
     <div className="h-[420px] w-full overflow-hidden rounded-lg border">
       <Map
-        initialViewState={{ latitude: -2.5, longitude: 117, zoom: 3.6 }}
+        initialViewState={{ latitude: 3.8, longitude: 108, zoom: 3.9 }}
         mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
         attributionControl={false}
       >
