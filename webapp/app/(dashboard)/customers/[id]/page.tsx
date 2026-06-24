@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Sparkles, MapPin, CalendarClock, Wallet } from "lucide-react";
+import { ArrowLeft, Sparkles, MapPin, CalendarClock, Wallet, Landmark } from "lucide-react";
 import { useApi } from "@/components/data";
 import { PageSkeleton, ErrorState } from "@/components/loading";
 import { Card } from "@/components/ui/card";
@@ -21,6 +21,7 @@ type Detail = {
   trend: { week: string; channel: string; spend: number }[];
   categories: { category: string; spend: number }[];
   recent: Record<string, unknown>[];
+  holdings: { product_name: string; category: string; islamic_contract: string; holding_kind: string; status: string; open_date: string | null; balance: number | null }[];
   signals: Record<string, string | number | null> | null;
   nba: { title: string; reason: string; priority: "High" | "Medium" | "Low" }[];
 };
@@ -50,11 +51,11 @@ export default function CustomerDetailPage() {
   const churn = String(p.churn_risk_segment);
   const s = data.signals;
   const nbp = s ? [
-    { product: "Mortgage", score: num(s.p_mortgage) },
-    { product: "Term deposit", score: num(s.p_term_deposit) },
-    { product: "Premium card", score: num(s.p_card_upgrade) },
-    { product: "Investment", score: num(s.p_investment) },
-    { product: "Debt consolidation", score: num(s.p_consolidation) },
+    { product: "SMART Mortgage HOME-i", score: num(s.p_mortgage) },
+    { product: "Term Investment-i", score: num(s.p_term_deposit) },
+    { product: "Visa Infinite-i", score: num(s.p_card_upgrade) },
+    { product: "SURIA Investment-i", score: num(s.p_investment) },
+    { product: "Ar-Rahnu / R&R", score: num(s.p_consolidation) },
   ].sort((a, b) => b.score - a.score) : [];
 
   return (
@@ -90,7 +91,7 @@ export default function CustomerDetailPage() {
       <KpiRow>
         <KpiCard label="Total savings" value={money(savings)} />
         <KpiCard label="Total deposits" value={money(deposits)} />
-        <KpiCard label="Loans outstanding" value={money(loans)} />
+        <KpiCard label="Financing outstanding" value={money(loans)} />
         <KpiCard label="Net position" value={money(net)} accent={net >= 0 ? "success" : "danger"} />
       </KpiRow>
 
@@ -158,24 +159,31 @@ export default function CustomerDetailPage() {
         </div>
       )}
 
-      {/* Products */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <DataTable title={`Accounts (${data.accounts.length})`} rows={data.accounts}
-          columns={[
-            { key: "account_id", label: "Account" },
-            { key: "account_type", label: "Type" },
-            { key: "balance", label: "Balance", align: "right", fmt: (v) => money(v as number) },
-            { key: "status_desc", label: "Status" },
-            { key: "open_date", label: "Opened" },
-          ]} />
-        <DataTable title={`Loans (${data.loans.length})`} rows={data.loans}
-          columns={[
-            { key: "loan_type", label: "Type" },
-            { key: "outstanding", label: "Outstanding", align: "right", fmt: (v) => money(v as number) },
-            { key: "monthly", label: "Monthly", align: "right", fmt: (v) => money(v as number) },
-            { key: "next_due", label: "Next due" },
-          ]} />
-      </div>
+      {/* Products held */}
+      <Card className="p-5">
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+          <Landmark className="h-4 w-4 text-primary" /> Products held
+          <span className="font-normal text-muted-foreground">({data.holdings.length})</span>
+        </h3>
+        <div className="grid gap-4 md:grid-cols-2">
+          {Array.from(new Set(data.holdings.map((h) => h.category))).map((cat) => (
+            <div key={cat}>
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{cat}</p>
+              <div className="space-y-1.5">
+                {data.holdings.filter((h) => h.category === cat).map((h, i) => (
+                  <div key={i} className="flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium">{h.product_name}</p>
+                      <p className="text-[11px] text-muted-foreground">{h.islamic_contract}</p>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums">{h.balance != null ? money(h.balance) : "—"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/* Spending */}
       <div className="grid gap-4 lg:grid-cols-2">

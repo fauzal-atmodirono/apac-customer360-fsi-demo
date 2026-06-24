@@ -34,7 +34,51 @@ SCHEMAS: dict[str, list[str]] = {
     "AS400_CC_TXN": ["TXNID", "CRDNO", "CC_CIF", "TXNDT", "TXNTM", "TXNAMT", "TXN_CAT", "TXNTYP"],
     "AS400_DC_TXN": ["TXNID", "DCRDNO", "DC_CIF", "DC_ACCNO", "TXNDT", "TXNTM", "TXNAMT", "TXN_CAT", "TXNTYP"],
     "AS400_LOAN_MAST": ["LN_NO", "LN_CIF", "LNTYPE", "LN_AMT", "LN_BAL", "LNMTHP", "LN_DUE"],
+    "AS400_PRODUCT_MAST": ["PRDCODE", "PRDNAME", "PRDCAT", "PRDCONTRACT", "PRDTYPE", "PRDRATE", "PRDDESC"],
+    "AS400_PROD_HOLD": ["HOLDID", "PH_CIF", "PRDCODE", "PHSTAT", "PHOPDT", "PHBAL"],
 }
+
+# Bank Muamalat Malaysia (Islamic bank) consumer product catalog. Static reference list
+# emitted as AS400_PRODUCT_MAST. (code, name, category, islamic_contract, type, indicative_rate%, desc)
+PRODUCT_CATALOG = [
+    ("DEP-BSA", "Basic Savings Account-i", "Deposits", "Wadiah", "DEPOSIT", 0.25, "Entry-level savings, no minimum balance"),
+    ("DEP-SAV", "Savings Account-i", "Deposits", "Tawarruq", "DEPOSIT", 1.00, "Everyday savings with profit"),
+    ("DEP-ELITE", "ELITE Savings Account-i", "Deposits", "Tawarruq", "DEPOSIT", 1.85, "Tiered high-balance savings"),
+    ("DEP-JR", "Junior Pawket-i", "Deposits", "Wadiah", "DEPOSIT", 0.50, "Children's savings account"),
+    ("DEP-PEN", "Pensioner Savings Account-i", "Deposits", "Wadiah", "DEPOSIT", 0.75, "Savings for pensioners"),
+    ("DEP-CUR", "Current Account-i", "Deposits", "Tawarruq", "DEPOSIT", 0.00, "Transactional current account"),
+    ("DEP-FTA", "Fixed Term Account-i", "Deposits", "Tawarruq", "DEPOSIT", 3.40, "Fixed-tenure term deposit"),
+    ("FIN-CASH", "Cash-i Personal Financing", "Financing", "Tawarruq", "FINANCING", 6.50, "Unsecured personal financing"),
+    ("FIN-CASHPREM", "Cash-i Muamalat Premier", "Financing", "Tawarruq", "FINANCING", 5.40, "Premier personal financing"),
+    ("FIN-MORTHOME", "SMART Mortgage HOME-i", "Financing", "Musharakah Mutanaqisah", "FINANCING", 4.30, "Home financing"),
+    ("FIN-MORTFLEXI", "SMART Mortgage FLEXI-i", "Financing", "Musharakah Mutanaqisah", "FINANCING", 4.45, "Flexi home financing with offset"),
+    ("FIN-VEH", "Vehicle Financing-i", "Financing", "AITAB", "FINANCING", 3.50, "Auto financing (hire-purchase)"),
+    ("FIN-BIKE", "Big Bike Financing-i", "Financing", "AITAB", "FINANCING", 4.75, "Motorcycle financing"),
+    ("FIN-ASB", "ASB Financing-i", "Financing", "Tawarruq", "FINANCING", 5.00, "Unit-trust-linked financing"),
+    ("FIN-CASHLINE", "Cashline-i Facility", "Financing", "Tawarruq", "FINANCING", 7.00, "Revolving overdraft-i"),
+    ("FIN-ARRAHNU", "Ar-Rahnu", "Financing", "Qard & Rahnu", "FINANCING", 0.65, "Islamic pawn broking (gold)"),
+    ("FIN-ARRPRESTIGE", "Ar-Rahnu PRESTIGE", "Financing", "Qard & Rahnu", "FINANCING", 0.60, "High-value Islamic pawn"),
+    ("CARD-PLAT", "Visa Platinum-i", "Cards", "Ujrah", "CARD", 0.00, "Platinum credit card-i"),
+    ("CARD-INF", "Visa Infinite-i", "Cards", "Ujrah", "CARD", 0.00, "Premium credit card-i"),
+    ("CARD-DEBIT", "Debit Card-i", "Cards", "Wadiah", "CARD", 0.00, "Debit card-i"),
+    ("INV-SURIA", "SURIA Investment Account-i", "Wealth & Investment", "Mudarabah", "INVESTMENT", 4.10, "Unrestricted investment account"),
+    ("INV-TIA", "Term Investment Account-i", "Wealth & Investment", "Mudarabah", "INVESTMENT", 3.90, "Fixed-tenure investment account"),
+    ("INV-GOLD", "Gold-i", "Wealth & Investment", "Bai' as-Sarf", "INVESTMENT", 0.00, "Gold investment account"),
+    ("INV-UT", "e-Unit Trust", "Wealth & Investment", "Wakalah", "INVESTMENT", 0.00, "Online unit trust"),
+    ("INV-ASNB", "ASNB Investment", "Wealth & Investment", "Wakalah", "INVESTMENT", 0.00, "ASNB fund investment"),
+    ("INV-PMA", "Private Managed Account", "Wealth & Investment", "Wakalah", "INVESTMENT", 0.00, "Discretionary wealth mandate"),
+    ("TKF-FAMILY", "Family Takaful", "Takaful", "Tabarru' & Wakalah", "PROTECTION", 0.00, "Family / life protection"),
+    ("TKF-GENERAL", "General Takaful", "Takaful", "Tabarru' & Wakalah", "PROTECTION", 0.00, "Motor / home protection"),
+    ("TKF-MEDICAL", "Medical Takaful", "Takaful", "Tabarru' & Wakalah", "PROTECTION", 0.00, "Medical / health protection"),
+    ("EST-WASIAT", "Wasiat (Islamic Will)", "Estate Planning", "Wasiyyah", "ESTATE", 0.00, "Islamic will writing"),
+    ("EST-ASSALIHIN", "As-Salihin Estate Planning", "Estate Planning", "Wasiyyah", "ESTATE", 0.00, "Estate planning service"),
+    ("EST-HIBAH", "Hibah Trust", "Estate Planning", "Hibah", "ESTATE", 0.00, "Conditional gift trust"),
+    ("DIG-IMUAMALAT", "i-Muamalat Internet Banking", "Digital & Services", "Ujrah", "SERVICE", 0.00, "Internet & mobile banking"),
+    ("DIG-DUITNOW", "DuitNow", "Digital & Services", "Ujrah", "SERVICE", 0.00, "Instant transfers & QR pay"),
+    ("SVC-SDB", "Safe Deposit Box", "Digital & Services", "Ijarah", "SERVICE", 0.00, "Safe deposit box rental"),
+    ("SVC-HAJJ", "Tabung Haji Transfer", "Digital & Services", "Wakalah", "SERVICE", 0.00, "Hajj savings transfer"),
+    ("SVC-ZAKAT", "Ez-Zakat Muamalat", "Digital & Services", "Wakalah", "SERVICE", 0.00, "Zakat payment service"),
+]
 
 SPEND_CATEGORIES = ["RETAIL", "GROCERY", "TRAVEL", "DINING", "DIGITAL", "UTILITY", "FUEL", "HEALTH", "ENTERTAINMENT"]
 DEBIT_CATEGORIES = ["RETAIL", "GROCERY", "DINING", "FUEL", "ATM", "UTILITY", "TRANSPORT"]
@@ -59,6 +103,8 @@ TXN_HOUR_WEIGHTS = [1, 1, 1, 1, 2, 3, 5, 8, 12, 14, 14, 16,
 @dataclass
 class GeneratedRows:
     customers: list[list] = field(default_factory=list)
+    products: list[list] = field(default_factory=list)
+    holdings: list[list] = field(default_factory=list)
     accounts: list[list] = field(default_factory=list)
     cards: list[list] = field(default_factory=list)
     debit_cards: list[list] = field(default_factory=list)
@@ -66,17 +112,21 @@ class GeneratedRows:
 
 
 class Generator:
-    def __init__(self, fake: Faker, rng: random.Random, today: date, time_rng: random.Random):
+    def __init__(self, fake: Faker, rng: random.Random, today: date, time_rng: random.Random,
+                 prod_rng: random.Random):
         self.fake = fake
         self.rng = rng
-        # Separate RNG stream for transaction times, so adding TXNTM does not perturb the
-        # main rng sequence (existing balances/regions/dates stay identical across regen).
+        # Separate RNG streams so adding TXNTM / product holdings does not perturb the main
+        # rng sequence (existing balances/regions/dates/txns stay identical across regen).
         self.time_rng = time_rng
+        self.prod_rng = prod_rng
+        self.archetype: dict[str, str] = {}  # cif -> archetype, for product-holding assignment
         self.today = today
         self.rows = GeneratedRows()
         self._cif_seq = 19283740
         self._txn_seq = 99887760
         self._dctxn_seq = 55443320
+        self._hold_seq = 70011000
 
     # -- id helpers ---------------------------------------------------------
     def next_cif(self) -> str:
@@ -160,6 +210,7 @@ class Generator:
     # -- archetype builders -------------------------------------------------
     def build(self, archetype: str) -> None:
         cif = self.next_cif()
+        self.archetype[cif] = archetype
         r = self.rng
         if archetype == "hnw_investor":
             self.add_customer(cif, "HNW", self.rand_dob(1955, 1985))
@@ -226,9 +277,67 @@ class Generator:
         for _ in range(n):
             self.build(self.rng.choice(self.ARCHETYPES))
 
+    # -- product holdings (new categories; separate prod_rng keeps base data stable) -------
+    def _new_holdings_for(self, archetype: str) -> list[tuple[str, float]]:
+        r = self.prod_rng
+        out: list[tuple[str, float]] = []
+        add = lambda code, bal=0.0: out.append((code, bal))
+        if r.random() < 0.9: add("DIG-IMUAMALAT")
+        if r.random() < 0.8: add("DIG-DUITNOW")
+        if archetype == "hnw_investor":
+            add("INV-SURIA", r.uniform(50_000, 400_000))
+            add("INV-GOLD", r.uniform(20_000, 150_000))
+            if r.random() < 0.7: add("INV-UT", r.uniform(30_000, 200_000))
+            if r.random() < 0.5: add("INV-PMA", r.uniform(100_000, 800_000))
+            add("TKF-FAMILY")
+            if r.random() < 0.7: add("EST-WASIAT")
+            if r.random() < 0.4: add("EST-ASSALIHIN")
+            if r.random() < 0.5: add("SVC-SDB")
+        elif archetype == "affluent_saver":
+            add("INV-TIA", r.uniform(20_000, 120_000))
+            if r.random() < 0.6: add("INV-UT", r.uniform(10_000, 80_000))
+            if r.random() < 0.5: add("INV-ASNB", r.uniform(5_000, 50_000))
+            if r.random() < 0.7: add("TKF-FAMILY")
+            if r.random() < 0.4: add("TKF-MEDICAL")
+            if r.random() < 0.4: add("EST-WASIAT")
+        elif archetype == "digital_shopper":
+            if r.random() < 0.6: add("INV-GOLD", r.uniform(1_000, 15_000))
+            if r.random() < 0.5: add("INV-ASNB", r.uniform(1_000, 20_000))
+            if r.random() < 0.3: add("TKF-MEDICAL")
+            if r.random() < 0.3: add("SVC-HAJJ")
+        elif archetype == "leveraged_borrower":
+            add("TKF-GENERAL")
+            if r.random() < 0.5: add("TKF-FAMILY")
+            if r.random() < 0.4: add("FIN-ARRAHNU", r.uniform(2_000, 20_000))
+        elif archetype == "churn_risk":
+            if r.random() < 0.4: add("SVC-ZAKAT")
+        else:  # standard retail
+            if r.random() < 0.4: add("INV-ASNB", r.uniform(1_000, 30_000))
+            if r.random() < 0.3: add("INV-GOLD", r.uniform(1_000, 20_000))
+            if r.random() < 0.4: add("TKF-FAMILY")
+            if r.random() < 0.3: add("TKF-MEDICAL")
+            if r.random() < 0.2: add("EST-WASIAT")
+            if r.random() < 0.3: add("SVC-HAJJ")
+        return out
+
+    def build_product_holdings(self) -> None:
+        """Emit the product catalog + per-customer holdings for the NEW categories
+        (investment, Takaful, estate, digital, Ar-Rahnu). Existing accounts/loans/cards are
+        mapped to catalog products downstream in Silver, not duplicated here."""
+        self.rows.products = [list(p) for p in PRODUCT_CATALOG]
+        for c in self.rows.customers:
+            cif = c[0]
+            for code, bal in self._new_holdings_for(self.archetype.get(cif, "standard")):
+                self._hold_seq += 1
+                open_date = self.today - timedelta(days=self.prod_rng.randint(30, 3000))
+                self.rows.holdings.append(
+                    [f"PH{self._hold_seq}", cif, code, "A", yyyymmdd(open_date), round(bal, 2)]
+                )
+
     # -- personas (fixed CIFs) ---------------------------------------------
     def add_personas(self) -> None:
         hnw = "0010000001"
+        self.archetype[hnw] = "hnw_investor"
         self.add_customer(hnw, "HNW", date(1968, 4, 12), "KUALA LUMPUR", date(2009, 3, 1), 680_000)
         hnw_sv = self.add_account(hnw, "SV", 420_000.00)
         self.add_account(hnw, "DP", 150_000.00)
@@ -236,6 +345,7 @@ class Generator:
         self.add_debit_txns(hnw, hnw_sv, 8, ["DINING", "ATM", "FUEL"], 300)
 
         sqz = "0010000002"
+        self.archetype[sqz] = "leveraged_borrower"
         self.add_customer(sqz, "MASS", date(1985, 9, 2), "JOHOR BAHRU", date(2016, 7, 15), 64_000)
         sqz_sv = self.add_account(sqz, "SV", 3_500.00)
         self.add_loan(sqz, "MORTGAGE", 350_000.00, 285_320.10, 1850.00)
@@ -243,6 +353,7 @@ class Generator:
         self.add_debit_txns(sqz, sqz_sv, 30, ["GROCERY", "ATM", "TRANSPORT", "FUEL"], 150)
 
         mil = "0010000003"
+        self.archetype[mil] = "digital_shopper"
         self.add_customer(mil, "MASS", date(1995, 6, 20), "GEORGE TOWN", date(2020, 1, 10), 48_000)
         mil_sv = self.add_account(mil, "SV", 18_000.00)
         self.add_debit_txns(mil, mil_sv, 18, ["RETAIL", "DINING", "TRANSPORT"], 120)
@@ -267,6 +378,7 @@ def write_outputs(out_dir: str, gen: Generator) -> None:
         ("AS400_CUST_MAST", gen.rows.customers), ("AS400_SVDP_MAST", gen.rows.accounts),
         ("AS400_CC_TXN", gen.rows.cards), ("AS400_DC_TXN", gen.rows.debit_cards),
         ("AS400_LOAN_MAST", gen.rows.loans),
+        ("AS400_PRODUCT_MAST", gen.rows.products), ("AS400_PROD_HOLD", gen.rows.holdings),
     ]:
         write_csv(os.path.join(out_dir, f"{name}.csv"), SCHEMAS[name], rows)
 
@@ -298,13 +410,15 @@ def main() -> None:
 
     rng = random.Random(args.seed)
     time_rng = random.Random(args.seed + 7)
+    prod_rng = random.Random(args.seed + 13)
     fake = Faker()
     Faker.seed(args.seed)
     today = date.fromisoformat(args.today) if args.today else date.today()
 
-    gen = Generator(fake, rng, today, time_rng)
+    gen = Generator(fake, rng, today, time_rng, prod_rng)
     gen.add_personas()
     gen.add_population(args.customers)
+    gen.build_product_holdings()
 
     write_outputs(args.out_dir, gen)
     write_corrupt_fixtures(args.corrupt_dir, gen)
@@ -315,6 +429,8 @@ def main() -> None:
     print(f"  AS400_CC_TXN.csv     {len(gen.rows.cards):>7} rows")
     print(f"  AS400_DC_TXN.csv     {len(gen.rows.debit_cards):>7} rows")
     print(f"  AS400_LOAN_MAST.csv  {len(gen.rows.loans):>7} rows")
+    print(f"  AS400_PRODUCT_MAST.csv {len(gen.rows.products):>5} rows")
+    print(f"  AS400_PROD_HOLD.csv  {len(gen.rows.holdings):>7} rows")
     print(f"Corrupt fixtures (TC-1.1 / TC-3.1) in {args.corrupt_dir}")
     print("Personas: 0010000001=HNW_INVESTOR  0010000002=LEVERAGED_BORROWER  0010000003=DIGITAL_SHOPPER")
 

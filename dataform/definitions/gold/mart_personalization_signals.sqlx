@@ -139,9 +139,9 @@ SELECT
   preferred_time_of_day,
   p_mortgage, p_term_deposit, p_card_upgrade, p_investment, p_consolidation,
   (SELECT product FROM UNNEST([
-     STRUCT('Mortgage' AS product, p_mortgage AS s), STRUCT('Term deposit', p_term_deposit),
-     STRUCT('Premium card', p_card_upgrade), STRUCT('Investment', p_investment),
-     STRUCT('Debt consolidation', p_consolidation)
+     STRUCT('SMART Mortgage HOME-i' AS product, p_mortgage AS s), STRUCT('Term Investment-i', p_term_deposit),
+     STRUCT('Visa Infinite-i', p_card_upgrade), STRUCT('SURIA Investment-i', p_investment),
+     STRUCT('Ar-Rahnu / R&R', p_consolidation)
    ]) ORDER BY s DESC LIMIT 1) AS nbp_top,
   GREATEST(p_mortgage, p_term_deposit, p_card_upgrade, p_investment, p_consolidation) AS nbp_top_score
 FROM scored

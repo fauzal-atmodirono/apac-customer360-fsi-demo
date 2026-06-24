@@ -1,0 +1,29 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Bank Muamalat Malaysia consumer product catalog (Shariah-compliant), conformed from AS400_PRODUCT_MAST.",
+  assertions: {
+    uniqueKey: ["product_code"],
+    nonNull: ["product_code", "product_name", "category"]
+  },
+  columns: {
+    product_code: "Product code (primary key).",
+    product_name: "Marketing product name (e.g. Savings Account-i, SMART Mortgage HOME-i).",
+    category: "Catalog category (Deposits / Financing / Cards / Wealth & Investment / Takaful / Estate Planning / Digital & Services).",
+    islamic_contract: "Underlying Shariah contract (Wadiah, Tawarruq, Murabahah, Musharakah Mutanaqisah, AITAB, Mudarabah, Wakalah, Ujrah, Qard & Rahnu, ...).",
+    product_type: "DEPOSIT / FINANCING / CARD / INVESTMENT / PROTECTION / ESTATE / SERVICE.",
+    indicative_rate: "Indicative profit/financing rate (% p.a.); 0 for fee-based or service products.",
+    description: "Short product description."
+  }
+}
+
+SELECT
+  TRIM(PRDCODE) AS product_code,
+  TRIM(PRDNAME) AS product_name,
+  TRIM(PRDCAT) AS category,
+  TRIM(PRDCONTRACT) AS islamic_contract,
+  UPPER(TRIM(PRDTYPE)) AS product_type,
+  CAST(PRDRATE AS FLOAT64) AS indicative_rate,
+  TRIM(PRDDESC) AS description
+FROM
+  ${ref("AS400_PRODUCT_MAST")}

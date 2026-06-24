@@ -14,6 +14,8 @@ export const PERS = `\`${PROJECT}.${GOLD}.mart_personalization_signals\``;
 export const DIM_CUSTOMERS = `\`${PROJECT}.${SILVER}.dim_customers\``;
 export const FCT_CC = `\`${PROJECT}.${SILVER}.fct_credit_card_transactions\``;
 export const FCT_DC = `\`${PROJECT}.${SILVER}.fct_debit_card_transactions\``;
+export const DIM_PRODUCTS = `\`${PROJECT}.${SILVER}.dim_products\``;
+export const FCT_HOLDINGS = `\`${PROJECT}.${SILVER}.fct_product_holdings\``;
 
 const SCOPES = ["https://www.googleapis.com/auth/cloud-platform"];
 
