@@ -32,6 +32,7 @@ export default function ProductsPage() {
   const topCat = [...data.byCategory].sort((a, b) => num(b.holders) - num(a.holders))[0];
   const whitespace = [...data.catalog].filter((p) => p.product_type !== "SERVICE")
     .sort((a, b) => num(a.holders) - num(b.holders)).slice(0, 6);
+  const shallow = data.perCustomer.filter((p) => num(p.products) <= 2).reduce((a, p) => a + num(p.customers), 0);
 
   return (
     <div className="space-y-5">
@@ -51,11 +52,11 @@ export default function ProductsPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard title="Reach by category (unique holders)"
-          caption={<>Everyday rails (deposits, cards, digital) dominate; wealth, Takaful & estate are the cross-sell frontier.</>}>
+          caption={<><b>{topCat?.category}</b> reaches <b>{num(topCat?.holders).toLocaleString()}</b> customers while wealth, Takaful & estate reach far fewer — these low-reach categories are the highest-margin cross-sell frontier.</>}>
           <VBars data={data.byCategory} xKey="category" valueKey="holders" />
         </ChartCard>
         <ChartCard title="Products held per customer"
-          caption={<>Most customers hold a handful of products — single-product holders are prime onboarding-to-depth targets.</>}>
+          caption={<><b>{shallow.toLocaleString()}</b> customers hold ≤2 products vs an avg of <b>{num(k.avg_products).toFixed(1)}</b> — deepening these shallow relationships is the fastest route to higher per-customer value.</>}>
           <VBars data={data.perCustomer} xKey="products" valueKey="customers" />
         </ChartCard>
       </div>

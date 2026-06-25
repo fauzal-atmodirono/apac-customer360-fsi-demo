@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Monthly account balance snapshots (12 months) from AS400_BAL_HIST — powers savings trends and real KPI growth.",
+  assertions: { uniqueKey: ["account_id", "month"], nonNull: ["account_id", "customer_id", "month"] },
+  columns: {
+    account_id: "Account number.",
+    customer_id: "Owning customer CIF.",
+    month: "Snapshot month (first of month).",
+    balance: "Account balance at month end."
+  }
+}
+
+SELECT
+  TRIM(BH_ACCNO) AS account_id,
+  TRIM(BH_CIF) AS customer_id,
+  PARSE_DATE('%Y%m', CAST(BH_MONTH AS STRING)) AS month,
+  CAST(BH_BAL AS NUMERIC) AS balance
+FROM ${ref("AS400_BAL_HIST")}

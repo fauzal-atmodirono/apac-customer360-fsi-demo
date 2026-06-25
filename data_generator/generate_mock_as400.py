@@ -36,7 +36,32 @@ SCHEMAS: dict[str, list[str]] = {
     "AS400_LOAN_MAST": ["LN_NO", "LN_CIF", "LNTYPE", "LN_AMT", "LN_BAL", "LNMTHP", "LN_DUE"],
     "AS400_PRODUCT_MAST": ["PRDCODE", "PRDNAME", "PRDCAT", "PRDCONTRACT", "PRDTYPE", "PRDRATE", "PRDDESC"],
     "AS400_PROD_HOLD": ["HOLDID", "PH_CIF", "PRDCODE", "PHSTAT", "PHOPDT", "PHBAL"],
+    "AS400_ACCT_TXN": ["TXNID", "AT_CIF", "ACCNO", "AT_DATE", "AT_AMT", "AT_TYPE", "AT_CAT"],
+    "AS400_BAL_HIST": ["BH_ACCNO", "BH_CIF", "BH_MONTH", "BH_BAL"],
+    "AS400_CAMPAIGN_MAST": ["CAMPID", "CAMPNAME", "PRDCODE", "CHANNEL", "CMP_START", "CMP_END"],
+    "AS400_CAMPAIGN_RESP": ["RESPID", "CR_CIF", "CAMPID", "SENT_DT", "STATUS", "RESP_DT"],
+    "AS400_FIN_REPAY": ["REPAYID", "FR_CIF", "LN_NO", "DUE_DT", "DUE_AMT", "PAID_DT", "PAID_AMT", "STATUS", "DPD"],
+    "AS400_XFER_TXN": ["XFERID", "XF_CIF", "ACCNO", "XFER_DT", "XFER_AMT", "XFER_TYPE", "BENEF_BANK", "BENEF_COUNTRY", "FEE", "DIRECTION"],
+    "AS400_PROFIT_DIST": ["DISTID", "PD_CIF", "ACCNO", "PRDCODE", "DIST_DT", "PROFIT_AMT", "RATE"],
+    "AS400_TELLER_TXN": ["TELLERID", "TL_CIF", "ACCNO", "TXN_DT", "TXN_AMT", "TXN_TYPE", "CHANNEL", "BRANCH_REGION"],
 }
+
+# Common Malaysia outbound remittance corridors (migrant-worker destinations).
+REMIT_CORRIDORS = ["INDONESIA", "BANGLADESH", "NEPAL", "INDIA", "PHILIPPINES", "PAKISTAN", "MYANMAR"]
+# Indicative profit rates (% p.a.) for profit-bearing products, for profit distribution.
+PROFIT_RATES = {"DEP-SAV": 1.0, "DEP-ELITE": 1.85, "DEP-FTA": 3.4, "INV-SURIA": 4.1, "INV-TIA": 3.9}
+
+# Marketing campaigns (static): each promotes a catalog product through a channel.
+CAMPAIGNS = [
+    ("CMP-MORT", "SMART Mortgage HOME-i Drive", "FIN-MORTHOME", "EMAIL"),
+    ("CMP-SURIA", "SURIA Investment Campaign", "INV-SURIA", "APP"),
+    ("CMP-CARDINF", "Visa Infinite-i Upgrade", "CARD-INF", "EMAIL"),
+    ("CMP-CASH", "Cash-i Raya Financing", "FIN-CASH", "SMS"),
+    ("CMP-TKF", "Family Takaful Protection", "TKF-FAMILY", "BRANCH"),
+    ("CMP-GOLD", "Gold-i Wealth Campaign", "INV-GOLD", "APP"),
+    ("CMP-FTA", "Fixed Term-i Promo", "DEP-FTA", "EMAIL"),
+    ("CMP-ASB", "ASB Financing-i Offer", "FIN-ASB", "SMS"),
+]
 
 # Bank Muamalat Malaysia (Islamic bank) consumer product catalog. Static reference list
 # emitted as AS400_PRODUCT_MAST. (code, name, category, islamic_contract, type, indicative_rate%, desc)
@@ -58,6 +83,7 @@ PRODUCT_CATALOG = [
     ("FIN-CASHLINE", "Cashline-i Facility", "Financing", "Tawarruq", "FINANCING", 7.00, "Revolving overdraft-i"),
     ("FIN-ARRAHNU", "Ar-Rahnu", "Financing", "Qard & Rahnu", "FINANCING", 0.65, "Islamic pawn broking (gold)"),
     ("FIN-ARRPRESTIGE", "Ar-Rahnu PRESTIGE", "Financing", "Qard & Rahnu", "FINANCING", 0.60, "High-value Islamic pawn"),
+    ("FIN-ITEKAD", "iTEKAD Microfinance", "Financing", "Qard al-Hasan", "FINANCING", 0.00, "Social microfinance for B40 entrepreneurs"),
     ("CARD-PLAT", "Visa Platinum-i", "Cards", "Ujrah", "CARD", 0.00, "Platinum credit card-i"),
     ("CARD-INF", "Visa Infinite-i", "Cards", "Ujrah", "CARD", 0.00, "Premium credit card-i"),
     ("CARD-DEBIT", "Debit Card-i", "Cards", "Wadiah", "CARD", 0.00, "Debit card-i"),
@@ -105,6 +131,14 @@ class GeneratedRows:
     customers: list[list] = field(default_factory=list)
     products: list[list] = field(default_factory=list)
     holdings: list[list] = field(default_factory=list)
+    acct_txns: list[list] = field(default_factory=list)
+    bal_hist: list[list] = field(default_factory=list)
+    campaigns: list[list] = field(default_factory=list)
+    campaign_resp: list[list] = field(default_factory=list)
+    fin_repay: list[list] = field(default_factory=list)
+    xfer_txns: list[list] = field(default_factory=list)
+    profit_dist: list[list] = field(default_factory=list)
+    teller_txns: list[list] = field(default_factory=list)
     accounts: list[list] = field(default_factory=list)
     cards: list[list] = field(default_factory=list)
     debit_cards: list[list] = field(default_factory=list)
@@ -113,20 +147,26 @@ class GeneratedRows:
 
 class Generator:
     def __init__(self, fake: Faker, rng: random.Random, today: date, time_rng: random.Random,
-                 prod_rng: random.Random):
+                 prod_rng: random.Random, fin_rng: random.Random, txn_rng: random.Random):
         self.fake = fake
         self.rng = rng
-        # Separate RNG streams so adding TXNTM / product holdings does not perturb the main
-        # rng sequence (existing balances/regions/dates/txns stay identical across regen).
+        # Separate RNG streams so adding TXNTM / product holdings / finance data does not perturb
+        # the main rng sequence (existing balances/regions/dates/txns stay identical across regen).
         self.time_rng = time_rng
         self.prod_rng = prod_rng
+        self.fin_rng = fin_rng
+        self.txn_rng = txn_rng
         self.archetype: dict[str, str] = {}  # cif -> archetype, for product-holding assignment
+        self.income: dict[str, float] = {}   # cif -> annual income, for cashflow generation
         self.today = today
         self.rows = GeneratedRows()
         self._cif_seq = 19283740
         self._txn_seq = 99887760
         self._dctxn_seq = 55443320
         self._hold_seq = 70011000
+        self._at_seq = 30055000
+        self._resp_seq = 80022000
+        self._seq = 40066000  # generic sequence for the new transaction tables
 
     # -- id helpers ---------------------------------------------------------
     def next_cif(self) -> str:
@@ -334,6 +374,190 @@ class Generator:
                     [f"PH{self._hold_seq}", cif, code, "A", yyyymmdd(open_date), round(bal, 2)]
                 )
 
+    # -- finance data: cashflow, balance history, campaigns (separate fin_rng) ------------
+    def build_finance_data(self) -> None:
+        r = self.fin_rng
+        # cif -> a representative account number (first account), for ledger txns
+        first_acct = {}
+        for a in self.rows.accounts:
+            first_acct.setdefault(a[1], a[0])
+
+        # 1) Campaign catalog
+        for cid, name, prod, channel in CAMPAIGNS:
+            self.rows.campaigns.append([
+                cid, name, prod, channel,
+                yyyymmdd(self.today - timedelta(days=90)), yyyymmdd(self.today + timedelta(days=30)),
+            ])
+
+        # 2) Per-customer ledger txns (salary / bills / transfers / social finance) + iTEKAD
+        for c in self.rows.customers:
+            cif, segment, income = c[0], c[4], float(c[8])
+            arch = self.archetype.get(cif, "standard")
+            acct = first_acct.get(cif, "NA")
+            monthly_income = income / 12.0
+            salaried = {
+                "hnw_investor": 0.95, "affluent_saver": 0.95, "digital_shopper": 0.9,
+                "leveraged_borrower": 0.9, "standard": 0.85, "churn_risk": 0.45,
+            }.get(arch, 0.8) > r.random()
+            has_loan = any(l[1] == cif for l in self.rows.loans)
+            savings = sum(float(a[3]) for a in self.rows.accounts if a[1] == cif and a[2] == "SV")
+
+            def emit(d, amt, typ, cat):
+                self._at_seq += 1
+                self.rows.acct_txns.append([f"AT{self._at_seq}", cif, acct, yyyymmdd(d), round(amt, 2), typ, cat])
+
+            for m in range(6):  # last 6 months
+                base = self.today - timedelta(days=30 * m)
+                if salaried:
+                    emit(base.replace(day=min(25, 28)), monthly_income * r.uniform(0.95, 1.05), "C", "SALARY")
+                emit(base.replace(day=min(10, 28)), r.uniform(80, 400), "D", "BILL_UTILITY")
+                if r.random() < 0.7:
+                    emit(base.replace(day=min(12, 28)), r.uniform(50, 180), "D", "BILL_TELCO")
+                if has_loan:
+                    emit(base.replace(day=min(5, 28)), r.uniform(800, 2600), "D", "LOAN_REPAY")
+                if r.random() < 0.8:
+                    emit(base.replace(day=min(r.randint(1, 28), 28)), r.uniform(50, 1200), "D", "DUITNOW_OUT")
+                if r.random() < 0.5:
+                    emit(base.replace(day=min(r.randint(1, 28), 28)), r.uniform(50, 1500), "C", "DUITNOW_IN")
+                if r.random() < 0.6:
+                    emit(base.replace(day=min(r.randint(1, 28), 28)), r.uniform(5, 120), "D", "SADAQAH")
+            # Annual zakat for the zakat-eligible (savings above nisab ~ RM 22k)
+            if savings > 22000:
+                zd = self.today - timedelta(days=r.randint(0, 330))
+                emit(zd, savings * 0.025, "D", "ZAKAT")
+            if r.random() < 0.15:
+                emit(self.today - timedelta(days=r.randint(0, 300)), r.uniform(50, 1000), "D", "WAKAF")
+            # iTEKAD microfinance for some lower-income standard/churn customers
+            if arch in ("standard", "churn_risk") and income < 60000 and r.random() < 0.12:
+                self._hold_seq += 1
+                self.rows.holdings.append([f"PH{self._hold_seq}", cif, "FIN-ITEKAD", "A",
+                                           yyyymmdd(self.today - timedelta(days=r.randint(60, 1200))),
+                                           round(r.uniform(2000, 15000), 2)])
+
+        # 3) Monthly balance history per account (12 months, drifting to current balance)
+        for a in self.rows.accounts:
+            acc_no, cif, bal = a[0], a[1], float(a[3])
+            for m in range(12):
+                month = (self.today.replace(day=1) - timedelta(days=30 * m))
+                drift = 1.0 - (m * r.uniform(0.005, 0.02))  # older months slightly lower
+                self.rows.bal_hist.append([acc_no, cif, int(month.strftime("%Y%m")),
+                                           round(max(0.0, bal * drift * r.uniform(0.97, 1.03)), 2)])
+
+        # 4) Campaign responses (funnel sent -> opened -> clicked -> converted)
+        seg_match = {
+            "FIN-MORTHOME": {"AFFLUENT", "MASS"}, "INV-SURIA": {"HNW", "AFFLUENT"},
+            "CARD-INF": {"HNW", "AFFLUENT"}, "FIN-CASH": {"MASS"}, "TKF-FAMILY": {"HNW", "AFFLUENT", "MASS"},
+            "INV-GOLD": {"HNW", "AFFLUENT"}, "DEP-FTA": {"HNW", "AFFLUENT"}, "FIN-ASB": {"MASS"},
+        }
+        for cid, name, prod, channel in CAMPAIGNS:
+            targets = seg_match.get(prod, {"MASS", "AFFLUENT", "HNW"})
+            for c in self.rows.customers:
+                cif, segment = c[0], c[4]
+                arch = self.archetype.get(cif, "standard")
+                if r.random() >= (0.5 if segment in targets else 0.12):
+                    continue
+                sent = self.today - timedelta(days=r.randint(5, 80))
+                digital = arch == "digital_shopper"
+                status, resp = "SENT", None
+                if r.random() < (0.6 if digital else 0.45):
+                    status, resp = "OPENED", sent + timedelta(days=r.randint(0, 3))
+                    if r.random() < 0.45:
+                        status = "CLICKED"
+                        if r.random() < (0.35 if segment in targets else 0.18):
+                            status = "CONVERTED"
+                self._resp_seq += 1
+                self.rows.campaign_resp.append([
+                    f"CR{self._resp_seq}", cif, cid, yyyymmdd(sent), status,
+                    yyyymmdd(resp) if resp else "",
+                ])
+
+    # -- additional banking-transaction tables (separate txn_rng) -------------------------
+    def build_transaction_data(self) -> None:
+        r = self.txn_rng
+        MY_BANKS = ["MAYBANK", "CIMB", "RHB", "PUBLIC BANK", "BANK ISLAM", "AMBANK", "HONG LEONG"]
+        age_of = {c[0]: self.today.year - int(c[3]) // 10000 for c in self.rows.customers}
+        first_acct = {}
+        for a in self.rows.accounts:
+            first_acct.setdefault(a[1], a[0])
+
+        def nid(prefix):
+            self._seq += 1
+            return f"{prefix}{self._seq}"
+
+        # A. Financing repayments & arrears — per loan, 12 monthly installments
+        for ln in self.rows.loans:  # [LN_NO, LN_CIF, LNTYPE, LN_AMT, LN_BAL, LNMTHP, LN_DUE]
+            ln_no, cif, monthly = ln[0], ln[1], float(ln[5])
+            arch = self.archetype.get(cif, "standard")
+            delinq = {"leveraged_borrower": 0.30, "churn_risk": 0.35}.get(arch, 0.06)
+            k = r.choices([1, 2, 3, 4], [0.4, 0.3, 0.2, 0.1])[0] if r.random() < delinq else 0
+            for m in range(12):  # m=0 = current month
+                due = self.today - timedelta(days=30 * m)
+                if m < k:  # recent consecutive missed
+                    status, paid_dt, paid_amt, dpd = "MISSED", "", 0.0, (m + 1) * 30
+                elif r.random() < 0.10:  # historical late
+                    d = r.randint(5, 40)
+                    status, paid_dt, paid_amt, dpd = "LATE", yyyymmdd(due + timedelta(days=d)), monthly, d
+                else:
+                    status, paid_dt, paid_amt, dpd = "PAID", yyyymmdd(due + timedelta(days=r.randint(0, 3))), monthly, 0
+                self.rows.fin_repay.append([nid("FR"), cif, ln_no, yyyymmdd(due), round(monthly, 2),
+                                            paid_dt, round(paid_amt, 2), status, dpd])
+
+        # B. Fund transfers & remittances — per customer, last 6 months
+        for c in self.rows.customers:
+            cif, arch, acct = c[0], self.archetype.get(c[0], "standard"), first_acct.get(c[0], "NA")
+            n = r.randint(2, 18) if arch == "digital_shopper" else r.randint(0, 10)
+            for _ in range(n):
+                d = self.today - timedelta(days=r.randint(0, 180))
+                typ = r.choices(["DUITNOW", "IBG", "RENTAS", "INTL"], [0.6, 0.25, 0.05, 0.10])[0]
+                if typ == "INTL":
+                    country, benef, fee, amt = r.choice(REMIT_CORRIDORS), "OVERSEAS BANK", r.uniform(10, 30), r.uniform(200, 5000)
+                elif typ == "RENTAS":
+                    country, benef, fee, amt = "MALAYSIA", r.choice(MY_BANKS), 5.0, r.uniform(10000, 100000)
+                elif typ == "IBG":
+                    country, benef, fee, amt = "MALAYSIA", r.choice(MY_BANKS), 0.10, r.uniform(100, 8000)
+                else:
+                    country, benef, fee, amt = "MALAYSIA", r.choice(MY_BANKS), 0.0, r.uniform(20, 3000)
+                direction = "OUT" if r.random() < 0.8 else "IN"
+                self.rows.xfer_txns.append([nid("XF"), cif, acct, yyyymmdd(d), round(amt, 2), typ,
+                                            benef, country, round(fee, 2), direction])
+
+        # C. Islamic profit distribution — monthly on profit-bearing deposits + investments
+        for a in self.rows.accounts:  # SV/DP accounts
+            cif, accno, actype, bal, status = a[1], a[0], a[2], float(a[3]), a[5]
+            if bal <= 0 or status != "A":
+                continue
+            code = "DEP-SAV" if actype == "SV" else "DEP-FTA"
+            rate = PROFIT_RATES[code]
+            for m in range(6):
+                d = self.today - timedelta(days=30 * m)
+                self.rows.profit_dist.append([nid("PD"), cif, accno, code, yyyymmdd(d),
+                                              round(bal * rate / 100 / 12, 2), rate])
+        for h in self.rows.holdings:  # SURIA / TIA investment holdings
+            if h[2] in ("INV-SURIA", "INV-TIA") and float(h[5]) > 0:
+                rate = PROFIT_RATES[h[2]]
+                for m in range(6):
+                    d = self.today - timedelta(days=30 * m)
+                    self.rows.profit_dist.append([nid("PD"), h[1], h[2], h[2], yyyymmdd(d),
+                                                  round(float(h[5]) * rate / 100 / 12, 2), rate])
+
+        # D. Branch/ATM/CDM cash transactions — channel mix by archetype/age
+        for c in self.rows.customers:
+            cif, arch, age, acct, region = c[0], self.archetype.get(c[0], "standard"), age_of[c[0]], first_acct.get(c[0], "NA"), c[6]
+            if arch == "digital_shopper":
+                w = {"ATM": 0.5, "CDM": 0.4, "BRANCH": 0.1}
+            elif arch == "churn_risk":
+                w = {"ATM": 0.7, "CDM": 0.2, "BRANCH": 0.1}
+            elif age >= 55 or arch == "standard":
+                w = {"BRANCH": 0.5, "ATM": 0.4, "CDM": 0.1}
+            else:
+                w = {"ATM": 0.45, "CDM": 0.3, "BRANCH": 0.25}
+            for _ in range(r.randint(0, 8)):
+                d = self.today - timedelta(days=r.randint(0, 180))
+                ch = r.choices(list(w), list(w.values()))[0]
+                typ = r.choices(["CASH_WD", "CASH_DEP"], [0.6, 0.4])[0]
+                self.rows.teller_txns.append([nid("TL"), cif, acct, yyyymmdd(d),
+                                              round(r.uniform(50, 3000), 2), typ, ch, region])
+
     # -- personas (fixed CIFs) ---------------------------------------------
     def add_personas(self) -> None:
         hnw = "0010000001"
@@ -379,6 +603,10 @@ def write_outputs(out_dir: str, gen: Generator) -> None:
         ("AS400_CC_TXN", gen.rows.cards), ("AS400_DC_TXN", gen.rows.debit_cards),
         ("AS400_LOAN_MAST", gen.rows.loans),
         ("AS400_PRODUCT_MAST", gen.rows.products), ("AS400_PROD_HOLD", gen.rows.holdings),
+        ("AS400_ACCT_TXN", gen.rows.acct_txns), ("AS400_BAL_HIST", gen.rows.bal_hist),
+        ("AS400_CAMPAIGN_MAST", gen.rows.campaigns), ("AS400_CAMPAIGN_RESP", gen.rows.campaign_resp),
+        ("AS400_FIN_REPAY", gen.rows.fin_repay), ("AS400_XFER_TXN", gen.rows.xfer_txns),
+        ("AS400_PROFIT_DIST", gen.rows.profit_dist), ("AS400_TELLER_TXN", gen.rows.teller_txns),
     ]:
         write_csv(os.path.join(out_dir, f"{name}.csv"), SCHEMAS[name], rows)
 
@@ -411,14 +639,18 @@ def main() -> None:
     rng = random.Random(args.seed)
     time_rng = random.Random(args.seed + 7)
     prod_rng = random.Random(args.seed + 13)
+    fin_rng = random.Random(args.seed + 17)
+    txn_rng = random.Random(args.seed + 19)
     fake = Faker()
     Faker.seed(args.seed)
     today = date.fromisoformat(args.today) if args.today else date.today()
 
-    gen = Generator(fake, rng, today, time_rng, prod_rng)
+    gen = Generator(fake, rng, today, time_rng, prod_rng, fin_rng, txn_rng)
     gen.add_personas()
     gen.add_population(args.customers)
     gen.build_product_holdings()
+    gen.build_finance_data()
+    gen.build_transaction_data()
 
     write_outputs(args.out_dir, gen)
     write_corrupt_fixtures(args.corrupt_dir, gen)
@@ -431,6 +663,14 @@ def main() -> None:
     print(f"  AS400_LOAN_MAST.csv  {len(gen.rows.loans):>7} rows")
     print(f"  AS400_PRODUCT_MAST.csv {len(gen.rows.products):>5} rows")
     print(f"  AS400_PROD_HOLD.csv  {len(gen.rows.holdings):>7} rows")
+    print(f"  AS400_ACCT_TXN.csv   {len(gen.rows.acct_txns):>7} rows")
+    print(f"  AS400_BAL_HIST.csv   {len(gen.rows.bal_hist):>7} rows")
+    print(f"  AS400_CAMPAIGN_MAST.csv {len(gen.rows.campaigns):>4} rows")
+    print(f"  AS400_CAMPAIGN_RESP.csv {len(gen.rows.campaign_resp):>5} rows")
+    print(f"  AS400_FIN_REPAY.csv  {len(gen.rows.fin_repay):>7} rows")
+    print(f"  AS400_XFER_TXN.csv   {len(gen.rows.xfer_txns):>7} rows")
+    print(f"  AS400_PROFIT_DIST.csv {len(gen.rows.profit_dist):>6} rows")
+    print(f"  AS400_TELLER_TXN.csv {len(gen.rows.teller_txns):>7} rows")
     print(f"Corrupt fixtures (TC-1.1 / TC-3.1) in {args.corrupt_dir}")
     print("Personas: 0010000001=HNW_INVESTOR  0010000002=LEVERAGED_BORROWER  0010000003=DIGITAL_SHOPPER")
 

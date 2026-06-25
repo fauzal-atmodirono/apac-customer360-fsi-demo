@@ -1,0 +1,25 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Monthly Islamic profit distribution from AS400_PROFIT_DIST — Mudarabah/Tawarruq profit credited to deposit & investment accounts.",
+  assertions: { uniqueKey: ["distribution_id"], nonNull: ["distribution_id", "customer_id"] },
+  columns: {
+    distribution_id: "Unique distribution row ID.",
+    customer_id: "Owning customer CIF.",
+    account_id: "Credited account / product.",
+    product_code: "Profit-bearing product (FK to dim_products).",
+    dist_date: "Profit distribution date.",
+    profit_amount: "Profit credited.",
+    rate: "Indicative profit rate applied (% p.a.)."
+  }
+}
+
+SELECT
+  TRIM(DISTID) AS distribution_id,
+  TRIM(PD_CIF) AS customer_id,
+  TRIM(ACCNO) AS account_id,
+  TRIM(PRDCODE) AS product_code,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(DIST_DT AS STRING)) AS dist_date,
+  CAST(PROFIT_AMT AS NUMERIC) AS profit_amount,
+  CAST(RATE AS FLOAT64) AS rate
+FROM ${ref("AS400_PROFIT_DIST")}

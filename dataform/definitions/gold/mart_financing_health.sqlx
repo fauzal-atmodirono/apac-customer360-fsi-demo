@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Per-customer financing credit-health from the repayment ledger: on-time rate, current days-past-due, arrears bucket, and non-performing-financing (NPF) flag.",
+  assertions: { uniqueKey: ["customer_id"] },
+  columns: {
+    customer_id: "Primary key.",
+    loans: "Number of financing accounts.",
+    on_time_rate: "Share of installments paid on time.",
+    current_dpd: "Worst current days-past-due across the customer's financing.",
+    arrears_bucket: "Current / 1-30 / 31-60 / 61-90 / 90+.",
+    total_arrears: "Sum of missed installment amounts.",
+    is_npf: "TRUE when current_dpd > 90 (non-performing financing)."
+  }
+}
+
+WITH per_loan AS (
+  SELECT customer_id, loan_id,
+    MAX(IF(status = 'MISSED', days_past_due, 0)) AS current_dpd,
+    COUNT(*) AS scheduled,
+    COUNTIF(status = 'PAID') AS paid_count,
+    SUM(IF(status = 'MISSED', due_amount, 0)) AS arrears
+  FROM ${ref("fct_financing_repayments")}
+  GROUP BY 1, 2
+)
+SELECT
+  customer_id,
+  COUNT(*) AS loans,
+  ROUND(SAFE_DIVIDE(SUM(paid_count), SUM(scheduled)), 3) AS on_time_rate,
+  MAX(current_dpd) AS current_dpd,
+  CASE
+    WHEN MAX(current_dpd) = 0 THEN 'Current'
+    WHEN MAX(current_dpd) <= 30 THEN '1-30'
+    WHEN MAX(current_dpd) <= 60 THEN '31-60'
+    WHEN MAX(current_dpd) <= 90 THEN '61-90'
+    ELSE '90+'
+  END AS arrears_bucket,
+  CAST(SUM(arrears) AS FLOAT64) AS total_arrears,
+  MAX(current_dpd) > 90 AS is_npf
+FROM per_loan
+GROUP BY 1

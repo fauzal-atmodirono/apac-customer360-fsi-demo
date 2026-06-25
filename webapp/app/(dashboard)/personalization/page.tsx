@@ -27,6 +27,14 @@ export default function PersonalizationPage() {
   const rfm = [...data.rfm].sort((a, b) => RFM_ORDER.indexOf(a.rfm_segment) - RFM_ORDER.indexOf(b.rfm_segment));
   const champions = data.rfm.find((r) => r.rfm_segment === "Champions");
   const topNbp = [...data.nbp].sort((a, b) => num(b.customers) - num(a.customers))[0];
+  const totalCust = data.rfm.reduce((a, r) => a + num(r.customers), 0) || 1;
+  const atRiskPct = (num(k.at_risk) / totalCust) * 100;
+  const stretched = data.health.find((h) => h.band === "Stretched")?.customers ?? 0;
+  const stretchedPct = (num(stretched) / totalCust) * 100;
+  const nbpTotal = data.nbp.reduce((a, n) => a + num(n.customers), 0) || 1;
+  const topNbpPct = topNbp ? (num(topNbp.customers) / nbpTotal) * 100 : 0;
+  const lowSow = data.sow.filter((s) => s.band === "0-10%" || s.band === "10-25%").reduce((a, s) => a + num(s.customers), 0);
+  const lowSowPct = (lowSow / totalCust) * 100;
 
   return (
     <div className="space-y-5">
@@ -45,22 +53,22 @@ export default function PersonalizationPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard title="RFM behavioral segments"
-          caption={<>Prioritise <b>At risk</b> &amp; <b>Hibernating</b> for win-back, and <b>Champions</b> for advocacy/upsell.</>}>
+          caption={<><b>{num(k.at_risk).toLocaleString()}</b> customers (<b>{atRiskPct.toFixed(0)}%</b>) are At-risk/Hibernating — a defined win-back list; <b>{champions?.customers ?? 0}</b> Champions are ripe for advocacy & upsell.</>}>
           <VBars data={rfm} xKey="rfm_segment" valueKey="customers" />
         </ChartCard>
         <ChartCard title="Financial-health bands"
-          caption={<><b>{data.health.find((h) => h.band === "Stretched")?.customers ?? 0}</b> customers are stretched — target with budgeting tools &amp; responsible-lending offers.</>}>
+          caption={<><b>{num(stretched).toLocaleString()}</b> customers (<b>{stretchedPct.toFixed(0)}%</b>) are financially stretched — proactive budgeting tools & responsible-lending reduce future default and protect the brand.</>}>
           <Donut data={data.health} nameKey="band" valueKey="customers" colorMap={HEALTH_COLORS} />
         </ChartCard>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard title="Next-Best-Product targets"
-          caption={<><b>{topNbp?.product}</b> leads as the top recommended product across the base.</>}>
+          caption={<><b>{topNbp?.product}</b> is the top recommendation for <b>{num(topNbp?.customers).toLocaleString()}</b> customers (<b>{topNbpPct.toFixed(0)}%</b>) — a ready-made priority campaign with model-ranked targeting.</>}>
           <HBars data={[...data.nbp].sort((a, b) => num(a.customers) - num(b.customers))} yKey="product" valueKey="customers" />
         </ChartCard>
         <ChartCard title="Share-of-wallet distribution"
-          caption={<>Low bands = whitespace where we capture little of the customer&apos;s spend — primary cross-sell opportunity.</>}>
+          caption={<><b>{lowSow.toLocaleString()}</b> customers (<b>{lowSowPct.toFixed(0)}%</b>) sit below 25% share-of-wallet — the clearest cross-sell whitespace to capture more of their financial life.</>}>
           <VBars data={data.sow} xKey="band" valueKey="customers" />
         </ChartCard>
       </div>

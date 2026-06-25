@@ -29,6 +29,10 @@ export default function ChurnPage() {
   const nRisk = atRisk.reduce((s, d) => s + num(d.customers), 0);
   const dollars = atRisk.reduce((s, d) => s + num(d.savings_at_risk), 0);
   const low = data.drivers.find((d) => d.band === "LOW");
+  const watchlist = data.list.length;
+  const ageHigh = new Map<string, number>();
+  for (const r of data.byAge) if (r.band === "HIGH") ageHigh.set(r.age_band, (ageHigh.get(r.age_band) ?? 0) + num(r.customers));
+  const worstAge = [...ageHigh.entries()].sort((a, b) => b[1] - a[1])[0];
 
   return (
     <div className="space-y-5">
@@ -47,19 +51,19 @@ export default function ChurnPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard title="Risk bands"
-          caption={<><b>{((1 - nRisk / total) * 100).toFixed(0)}%</b> low-risk; the rest are the watchlist to act on before defection.</>}>
+          caption={<><b>{money(dollars)}</b> of savings sits with the <b>{nRisk}</b> HIGH/MEDIUM-risk customers ({((nRisk / total) * 100).toFixed(0)}% of base) — that deposit base is what a retention programme protects.</>}>
           <Donut data={data.bands} nameKey="band" valueKey="customers" colorMap={CHURN_COLORS} />
         </ChartCard>
         <ChartCard title="ATM cash-flight vs savings"
-          caption={<>At-risk customers (red/amber) sit bottom-right — thin savings drained by frequent ATM withdrawals.</>}>
+          caption={<>The bottom-right cluster — thin savings drained by heavy ATM withdrawals — is the clearest cash-flight signal; trigger retention outreach automatically when a customer enters it.</>}>
           <Bubble data={data.scatter} xKey="atm" yKey="savings" sizeKey="churn_risk_score" colorKey="band" colorMap={CHURN_COLORS} xLabel="ATM (30d)" yLabel="savings" />
         </ChartCard>
         <ChartCard title="Churn-score distribution"
-          caption={<>Scores cluster low; the tail above ~35 is the active watchlist as ATM/dormancy signals build.</>}>
+          caption={<><b>{watchlist}</b> customers are on the active watchlist (score in the elevated tail) — a manageable list for RM-led save calls before balances leave.</>}>
           <Histogram data={data.scoreDist} valueKey="churn_risk_score" color="#C62828" />
         </ChartCard>
         <ChartCard title="Risk band by age"
-          caption={<>Tailor retention messaging (rates, fee waivers) to the most at-risk age cohorts.</>}>
+          caption={<>The <b>{worstAge?.[0] ?? "—"}</b> cohort carries the most HIGH-risk customers (<b>{worstAge?.[1] ?? 0}</b>) — tailor rate/fee-waiver retention offers to this age group first.</>}>
           <GroupedBars data={data.byAge} xKey="age_band" seriesKey="band" valueKey="customers" colorMap={CHURN_COLORS} />
         </ChartCard>
       </div>

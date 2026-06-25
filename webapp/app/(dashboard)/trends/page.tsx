@@ -49,6 +49,11 @@ export default function TrendsPage() {
   const wkdayPerDay = perDay(wkday);
   const wkendPerDay = perDay(wkend);
   const busiestDow = [...data.byDayOfWeek].sort((a, b) => num(b.txns) - num(a.txns))[0];
+  const creditPct = (credit / (totalSpend || 1)) * 100;
+  const weeklyTotal = data.weekly.reduce((a, w) => a + num(w.spend), 0) || 1;
+  const catShare = data.weekly.filter((w) => w.category === topCat).reduce((a, w) => a + num(w.spend), 0) / weeklyTotal * 100;
+  const todTotal = data.byTimeOfDay.reduce((a, t) => a + num(t.txns), 0) || 1;
+  const todShare = busiestTod ? (num(busiestTod.txns) / todTotal) * 100 : 0;
 
   return (
     <div className="space-y-5">
@@ -66,17 +71,17 @@ export default function TrendsPage() {
       </Insight>
 
       <ChartCard title="Daily spend — credit vs debit"
-        caption={<>Credit consistently outpaces debit — the primary rail to build rewards/limit strategies around.</>}>
+        caption={<>Credit is <b>{creditPct.toFixed(0)}%</b> of card spend — the primary rail; rewards, limit and instalment strategies here move the most volume.</>}>
         <MultiLine data={data.daily} indexKey="txn_date" seriesKey="channel" valueKey="spend" colorMap={CHANNEL_COLORS} height={320} />
       </ChartCard>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard title="Weekly category mix"
-          caption={<><b>{topCat}</b> leads weekly card value; the mix is stable week-to-week.</>}>
+          caption={<><b>{topCat}</b> is <b>{catShare.toFixed(0)}%</b> of weekly card value and the mix is stable — a dependable base for category-linked merchant & cashback deals.</>}>
           <StackArea data={data.weekly} indexKey="week" seriesKey="category" valueKey="spend" />
         </ChartCard>
         <ChartCard title="ATM withdrawals per week"
-          caption={<>ATM use peaks at <b>{peakAtm}</b> withdrawals in a week — rising cash-out is an early churn cue.</>}>
+          caption={<>ATM use peaks at <b>{peakAtm}</b> withdrawals/week — sustained cash-out is an early churn signal feeding the churn model; watch the trend, not just the level.</>}>
           <VBars data={data.atm} xKey="week" valueKey="withdrawals" color="#C62828" />
         </ChartCard>
       </div>
@@ -100,23 +105,23 @@ export default function TrendsPage() {
       </Insight>
 
       <ChartCard title="Transactions by hour of day"
-        caption={<>Card activity ramps from morning, peaks around <b>{peakHour ? fmtHour(num(peakHour.hour)) : "midday"}</b>, and tapers overnight.</>}>
+        caption={<>Activity peaks at <b>{peakHour ? fmtHour(num(peakHour.hour)) : "midday"}</b> (<b>{num(peakHour?.txns).toLocaleString()}</b> txns) — schedule push notifications, offers and contact-centre capacity to the daily peak for higher response.</>}>
         <VBars data={hours} xKey="label" valueKey="txns" height={300} />
       </ChartCard>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard title="Transactions by daypart"
-          caption={<><b>{busiestTod?.time_of_day}</b> is the busiest window — prioritise notifications and offers then.</>}>
+          caption={<><b>{busiestTod?.time_of_day}</b> carries <b>{todShare.toFixed(0)}%</b> of daily activity — the prime window to launch real-time offers & nudges.</>}>
           <VBars data={tod} xKey="time_of_day" valueKey="txns" />
         </ChartCard>
         <ChartCard title="Weekday vs weekend"
-          caption={<>Per active day: <b>{wkdayPerDay.toFixed(0)}</b> weekday vs <b>{wkendPerDay.toFixed(0)}</b> weekend txns — totals below reflect 5 vs 2 days.</>}>
+          caption={<>Per active day: <b>{wkdayPerDay.toFixed(0)}</b> weekday vs <b>{wkendPerDay.toFixed(0)}</b> weekend txns — size weekend digital capacity & support accordingly (totals reflect 5 vs 2 days).</>}>
           <Donut data={data.byDayGroup} nameKey="day_group" valueKey="txns" colorMap={DAYGROUP_COLORS} />
         </ChartCard>
       </div>
 
       <ChartCard title="Transactions by day of week"
-        caption={<><b>{busiestDow?.day_of_week}</b> sees the most card activity across the week.</>}>
+        caption={<><b>{busiestDow?.day_of_week}</b> is the busiest day (<b>{num(busiestDow?.txns).toLocaleString()}</b> txns) — anchor weekly campaign sends and staffing to the demand curve.</>}>
         <VBars data={data.byDayOfWeek} xKey="day_of_week" valueKey="txns" />
       </ChartCard>
     </div>

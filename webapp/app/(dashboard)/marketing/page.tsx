@@ -26,6 +26,10 @@ export default function MarketingPage() {
   const topCats = data.categories.slice(0, 3).map((c) => c.category);
   const n70 = data.ipsDist.filter((d) => num(d.ips) >= 70).length;
   const cross = data.crossSell.map((d) => ({ ...d, mortgage: d.has_active_mortgage ? "Has mortgage" : "No mortgage" }));
+  const ipsTotal = data.ipsDist.length || 1;
+  const ips70Pct = (n70 / ipsTotal) * 100;
+  const leads = data.hnwNoMortgage.length;
+  const topCatCust = num(data.categories[0]?.customers);
 
   return (
     <div className="space-y-5">
@@ -37,19 +41,19 @@ export default function MarketingPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard title="Top spending categories"
-          caption={<><b>{topCats.join(", ")}</b> lead — anchor merchant/cashback offers to these.</>}>
+          caption={<><b>{topCats[0]}</b> is the #1 spend category (<b>{topCatCust.toLocaleString()}</b> customers) — anchor merchant/cashback partnerships and rewards-card offers to the top 3 to lift card engagement.</>}>
           <HBars data={[...data.categories].sort((a, b) => a.customers - b.customers)} yKey="category" valueKey="customers" />
         </ChartCard>
         <ChartCard title="Investment-propensity distribution"
-          caption={<><b>{n70}</b> customers score 70+ IPS — the priority list for term-deposit & wealth campaigns.</>}>
+          caption={<><b>{n70.toLocaleString()}</b> customers (<b>{ips70Pct.toFixed(0)}%</b>) score 70+ IPS — a ready, model-scored priority list for term-deposit-i & wealth campaigns.</>}>
           <Histogram data={data.ipsDist} valueKey="ips" />
         </ChartCard>
         <ChartCard title="Category mix by segment"
-          caption={<>Mass-retail spend spreads across all categories; niche segments concentrate in a few — target by segment × category.</>}>
+          caption={<>Mass-retail spreads across all categories while niche segments concentrate in a few — segment × category targeting lifts relevance and conversion vs blanket offers.</>}>
           <GroupedBars data={data.catBySegment} xKey="category" seriesKey="segment" valueKey="customers" colorMap={SEGMENT_COLORS} stacked />
         </ChartCard>
         <ChartCard title="Cross-sell map (savings vs card spend)"
-          caption={<>Green points (no mortgage) with high savings are home-lending leads; bubble size = IPS.</>}>
+          caption={<><b>{leads.toLocaleString()}</b> affluent, no-mortgage customers (green, high savings) are qualified home-financing leads — the highest-value cross-sell on this page.</>}>
           <Bubble data={cross} xKey="savings" yKey="cc_spend" sizeKey="ips" colorKey="mortgage"
             colorMap={{ "Has mortgage": "#94A3B8", "No mortgage": "#2E7D32" }} xLabel="savings" yLabel="CC spend 30d" />
         </ChartCard>

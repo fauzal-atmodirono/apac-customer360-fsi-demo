@@ -16,6 +16,17 @@ export const FCT_CC = `\`${PROJECT}.${SILVER}.fct_credit_card_transactions\``;
 export const FCT_DC = `\`${PROJECT}.${SILVER}.fct_debit_card_transactions\``;
 export const DIM_PRODUCTS = `\`${PROJECT}.${SILVER}.dim_products\``;
 export const FCT_HOLDINGS = `\`${PROJECT}.${SILVER}.fct_product_holdings\``;
+export const FCT_ACCT_TXN = `\`${PROJECT}.${SILVER}.fct_account_transactions\``;
+export const MART_CASHFLOW = `\`${PROJECT}.${GOLD}.mart_cashflow\``;
+export const MART_CAMPAIGNS = `\`${PROJECT}.${GOLD}.mart_campaign_performance\``;
+export const MART_KPI_HISTORY = `\`${PROJECT}.${GOLD}.mart_kpi_history\``;
+export const FCT_FINREPAY = `\`${PROJECT}.${SILVER}.fct_financing_repayments\``;
+export const FCT_TRANSFERS = `\`${PROJECT}.${SILVER}.fct_transfers\``;
+export const FCT_TELLER = `\`${PROJECT}.${SILVER}.fct_teller_transactions\``;
+export const MART_FINANCING = `\`${PROJECT}.${GOLD}.mart_financing_health\``;
+export const MART_TRANSFERS = `\`${PROJECT}.${GOLD}.mart_transfer_behaviour\``;
+export const MART_PROFIT = `\`${PROJECT}.${GOLD}.mart_profit_distribution\``;
+export const MART_CHANNEL = `\`${PROJECT}.${GOLD}.mart_channel_usage\``;
 
 const SCOPES = ["https://www.googleapis.com/auth/cloud-platform"];
 

@@ -1,0 +1,29 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Per-customer campaign responses from AS400_CAMPAIGN_RESP, with funnel flags derived from the highest stage reached.",
+  assertions: { uniqueKey: ["response_id"], nonNull: ["response_id", "customer_id", "campaign_id"] },
+  columns: {
+    response_id: "Unique response ID.",
+    customer_id: "Targeted customer CIF.",
+    campaign_id: "Campaign (FK to dim_campaigns).",
+    sent_date: "Date the offer was sent.",
+    status: "Highest stage reached: SENT / OPENED / CLICKED / CONVERTED.",
+    response_date: "Date of last interaction (NULL if only SENT).",
+    opened: "Reached OPENED or beyond.",
+    clicked: "Reached CLICKED or beyond.",
+    converted: "Reached CONVERTED."
+  }
+}
+
+SELECT
+  TRIM(RESPID) AS response_id,
+  TRIM(CR_CIF) AS customer_id,
+  TRIM(CAMPID) AS campaign_id,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(SENT_DT AS STRING)) AS sent_date,
+  UPPER(TRIM(STATUS)) AS status,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(RESP_DT AS STRING)) AS response_date,
+  UPPER(TRIM(STATUS)) IN ('OPENED', 'CLICKED', 'CONVERTED') AS opened,
+  UPPER(TRIM(STATUS)) IN ('CLICKED', 'CONVERTED') AS clicked,
+  UPPER(TRIM(STATUS)) = 'CONVERTED' AS converted
+FROM ${ref("AS400_CAMPAIGN_RESP")}

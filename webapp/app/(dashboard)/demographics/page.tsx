@@ -29,6 +29,13 @@ export default function DemographicsPage() {
     .reduce((s, r) => s + num(r.customers), 0);
   const income = [...data.income].sort((a, b) => INCOME_ORDER.indexOf(a.income_band) - INCOME_ORDER.indexOf(b.income_band));
   const worstTenure = [...data.tenure].sort((a, b) => b.avg_churn - a.avg_churn)[0];
+  const totalCust = data.regions.reduce((a, r) => a + num(r.customers), 0) || 1;
+  const totalSav = data.regions.reduce((a, r) => a + num(r.total_savings), 0) || 1;
+  const topCustPct = (num(top.customers) / totalCust) * 100;
+  const top3SavShare = [...data.regions].sort((a, b) => b.total_savings - a.total_savings).slice(0, 3).reduce((a, r) => a + num(r.total_savings), 0) / totalSav * 100;
+  const richSavPct = (num(richReg.total_savings) / totalSav) * 100;
+  const hiIncomePct = (hiIncome / totalCust) * 100;
+  const worstSize = num(worstTenure.customers);
 
   return (
     <div className="space-y-5">
@@ -50,19 +57,19 @@ export default function DemographicsPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard title="Customers by region"
-          caption={<>Concentrated in <b>{top.region}</b> and a few metros — focus branch staffing there, test digital elsewhere.</>}>
+          caption={<><b>{top.region}</b> alone is <b>{topCustPct.toFixed(0)}%</b> of the base — concentrate flagship branches & RMs here; run digital-first acquisition in the long tail to keep cost-to-serve down.</>}>
           <HBars data={[...data.regions].sort((a, b) => a.customers - b.customers)} yKey="region" valueKey="customers" />
         </ChartCard>
         <ChartCard title="Savings by region"
-          caption={<><b>{richReg.region}</b> holds the most savings ({money(richReg.total_savings)}) — the priority for wealth & deposit products.</>}>
+          caption={<><b>{richReg.region}</b> holds <b>{money(richReg.total_savings)}</b> (<b>{richSavPct.toFixed(0)}%</b> of deposits); the top 3 regions hold <b>{top3SavShare.toFixed(0)}%</b> — focus wealth & term-deposit campaigns where the money already sits.</>}>
           <VBars data={[...data.regions].sort((a, b) => b.total_savings - a.total_savings)} xKey="region" valueKey="total_savings" />
         </ChartCard>
         <ChartCard title="Income-band distribution"
-          caption={<><b>{hiIncome}</b> customers fall in HIGH / VERY_HIGH tiers — the affluent base for premium cards & advisory.</>}>
+          caption={<><b>{hiIncome.toLocaleString()}</b> customers (<b>{hiIncomePct.toFixed(0)}%</b>) are HIGH/VERY_HIGH income — the affluent pool for premium cards, advisory and investment-i products.</>}>
           <VBars data={income} xKey="income_band" valueKey="customers" />
         </ChartCard>
         <ChartCard title="Tenure cohorts (customers)"
-          caption={<>The <b>{worstTenure.tenure_band}</b> cohort shows the highest avg churn score ({num(worstTenure.avg_churn).toFixed(0)}) — prioritize loyalty nudges there.</>}>
+          caption={<>The <b>{worstTenure.tenure_band}</b> cohort ({worstSize.toLocaleString()} customers) has the highest avg churn score (<b>{num(worstTenure.avg_churn).toFixed(0)}</b>) — direct retention spend at this cohort for the best save-rate ROI.</>}>
           <VBars data={data.tenure} xKey="tenure_band" valueKey="customers" />
         </ChartCard>
       </div>

@@ -1,0 +1,31 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Fund-transfer & remittance transactions from AS400_XFER_TXN (DuitNow / IBG / RENTAS / international).",
+  assertions: { uniqueKey: ["transfer_id"], nonNull: ["transfer_id", "customer_id"] },
+  columns: {
+    transfer_id: "Unique transfer ID.",
+    customer_id: "Owning customer CIF.",
+    account_id: "Source account.",
+    transfer_date: "Transfer date.",
+    amount: "Transfer amount.",
+    transfer_type: "DUITNOW / IBG / RENTAS / INTL.",
+    beneficiary_bank: "Beneficiary bank / institution.",
+    beneficiary_country: "Beneficiary country (remittance corridor).",
+    fee: "Transfer fee charged.",
+    direction: "OUT / IN."
+  }
+}
+
+SELECT
+  TRIM(XFERID) AS transfer_id,
+  TRIM(XF_CIF) AS customer_id,
+  TRIM(ACCNO) AS account_id,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(XFER_DT AS STRING)) AS transfer_date,
+  CAST(XFER_AMT AS NUMERIC) AS amount,
+  UPPER(TRIM(XFER_TYPE)) AS transfer_type,
+  TRIM(BENEF_BANK) AS beneficiary_bank,
+  UPPER(TRIM(BENEF_COUNTRY)) AS beneficiary_country,
+  CAST(FEE AS NUMERIC) AS fee,
+  UPPER(TRIM(DIRECTION)) AS direction
+FROM ${ref("AS400_XFER_TXN")}

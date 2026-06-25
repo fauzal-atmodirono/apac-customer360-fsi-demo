@@ -1,5 +1,5 @@
 import "server-only";
-import { runQuery, PROJECT, GOLD, SILVER, MART, PERS, DIM_CUSTOMERS, FCT_CC, FCT_DC, DIM_PRODUCTS, FCT_HOLDINGS } from "./bigquery";
+import { runQuery, PROJECT, GOLD, SILVER, MART, PERS, DIM_CUSTOMERS, FCT_CC, FCT_DC, DIM_PRODUCTS, FCT_HOLDINGS, FCT_ACCT_TXN, MART_CASHFLOW, MART_CAMPAIGNS, MART_KPI_HISTORY, FCT_FINREPAY, FCT_TRANSFERS, FCT_TELLER, MART_FINANCING, MART_TRANSFERS, MART_PROFIT, MART_CHANNEL } from "./bigquery";
 import { money } from "./format";
 
 // Server-side BigQuery Standard SQL for the dashboard API routes.
@@ -9,7 +9,7 @@ const q = runQuery;
 const AGE_BAND = `CASE WHEN age<30 THEN '18-29' WHEN age<45 THEN '30-44' WHEN age<60 THEN '45-59' ELSE '60+' END`;
 
 export async function executiveData() {
-  const [kpis, segments, age, tier, portfolio, snap] = await Promise.all([
+  const [kpis, segments, age, tier, portfolio, snap, hist, metrics, aumTrend] = await Promise.all([
     q(`SELECT COUNT(*) AS customers,
          CAST(SUM(total_savings_balance) AS FLOAT64) AS total_savings,
          CAST(SUM(total_deposit_balance) AS FLOAT64) AS total_deposit,
@@ -33,21 +33,45 @@ export async function executiveData() {
     q(`SELECT base_customers, base_card_spend, base_total_savings, base_total_loans,
               base_avg_ips, base_pct_mortgage, base_ltv
        FROM \`${PROJECT}.${GOLD}.kpi_snapshots\` ORDER BY snapshot_date DESC LIMIT 1`),
+    // Real month-over-month from balance/txn history (latest two months).
+    q(`SELECT customers, total_savings, total_card_spend
+       FROM ${MART_KPI_HISTORY} ORDER BY month DESC LIMIT 2`),
+    // Board-level cross-mart headline metrics (scalar sub-queries over the Gold marts).
+    q(`SELECT
+         (SELECT CAST(SUM(total_savings_balance + total_deposit_balance) AS FLOAT64) FROM ${MART}) AS aum,
+         (SELECT CAST(AVG(n) AS FLOAT64) FROM (SELECT COUNT(DISTINCT product_code) AS n FROM ${FCT_HOLDINGS} GROUP BY customer_id)) AS avg_products,
+         (SELECT CAST(SAFE_DIVIDE(COUNTIF(has_salary), COUNT(*)) AS FLOAT64) FROM ${MART_CASHFLOW}) AS primary_bank,
+         (SELECT CAST(AVG(wellness_score) AS FLOAT64) FROM ${MART_CASHFLOW}) AS avg_wellness,
+         (SELECT CAST(SAFE_DIVIDE(COUNTIF(is_npf), COUNT(*)) AS FLOAT64) FROM ${MART_FINANCING}) AS npf_rate,
+         (SELECT CAST(SUM(total_arrears) AS FLOAT64) FROM ${MART_FINANCING}) AS arrears,
+         (SELECT COUNTIF(churn_risk_segment IN ('HIGH','MEDIUM')) FROM ${MART}) AS at_risk,
+         (SELECT CAST(SUM(IF(churn_risk_segment IN ('HIGH','MEDIUM'), total_savings_balance, 0)) AS FLOAT64) FROM ${MART}) AS at_risk_dollars,
+         (SELECT CAST(SUM(total_profit_paid) AS FLOAT64) FROM ${MART_PROFIT}) AS profit_paid,
+         (SELECT CAST(AVG(NULLIF(effective_yield, 0)) AS FLOAT64) FROM ${MART_PROFIT}) AS avg_yield,
+         (SELECT CAST(SUM(total_fees) AS FLOAT64) FROM ${MART_TRANSFERS}) AS fee_income,
+         (SELECT CAST(AVG(digital_ratio) AS FLOAT64) FROM ${MART_CHANNEL}) AS digital_ratio,
+         (SELECT CAST(SAFE_DIVIDE(SUM(converted), SUM(sent)) AS FLOAT64) FROM ${MART_CAMPAIGNS}) AS conv_rate`),
+    q(`SELECT FORMAT_DATE('%Y-%m', month) AS month, CAST(total_savings AS FLOAT64) AS savings,
+              CAST(total_deposits AS FLOAT64) AS deposits FROM ${MART_KPI_HISTORY} ORDER BY month`),
   ]);
   const k = kpis[0] as Record<string, number>;
   const b = (snap[0] ?? {}) as Record<string, number>;
   const g = (cur: number, base?: number) =>
     base && base !== 0 ? ((Number(cur) - Number(base)) / Number(base)) * 100 : null;
+  // Real month-over-month: latest vs prior month from mart_kpi_history.
+  const cur = (hist[0] ?? {}) as Record<string, number>;
+  const prev = (hist[1] ?? {}) as Record<string, number>;
   const growth = {
-    customers: g(k.customers, b.base_customers),
-    total_savings: g(k.total_savings, b.base_total_savings),
+    customers: g(cur.customers, prev.customers) ?? g(k.customers, b.base_customers),
+    total_savings: g(cur.total_savings, prev.total_savings) ?? g(k.total_savings, b.base_total_savings),
+    total_card_spend: g(cur.total_card_spend, prev.total_card_spend) ?? g(k.total_card_spend, b.base_card_spend),
+    // point-in-time metrics keep the seeded baseline (no monthly history available)
     total_loans: g(k.total_loans, b.base_total_loans),
     avg_ips: g(k.avg_ips, b.base_avg_ips),
     pct_mortgage: g(k.pct_mortgage, b.base_pct_mortgage),
-    total_card_spend: g(k.total_card_spend, b.base_card_spend),
     ltv: g(k.ltv, b.base_ltv),
   };
-  return { kpis: k, growth, segments, age, tier, portfolio };
+  return { kpis: k, growth, segments, age, tier, portfolio, metrics: metrics[0], aumTrend };
 }
 
 export async function demographicsData() {
@@ -218,6 +242,98 @@ function nextBestActions(m: Mart) {
   return out;
 }
 
+export async function cashflowData() {
+  const [bands, primary, trend, kpis, profit] = await Promise.all([
+    q(`SELECT wellness_band AS band, COUNT(*) AS customers FROM ${MART_CASHFLOW} GROUP BY 1`),
+    q(`SELECT has_salary AS primary_bank, COUNT(*) AS customers FROM ${MART_CASHFLOW} GROUP BY 1`),
+    q(`SELECT FORMAT_DATE('%Y-%m', DATE_TRUNC(txn_date, MONTH)) AS month,
+              CAST(SUM(IF(direction='CREDIT', amount, 0)) AS FLOAT64) AS inflow,
+              CAST(SUM(IF(direction='DEBIT', amount, 0)) AS FLOAT64) AS outflow
+       FROM ${FCT_ACCT_TXN} GROUP BY 1 ORDER BY 1`),
+    q(`SELECT CAST(AVG(wellness_score) AS FLOAT64) AS avg_wellness,
+              CAST(AVG(surplus_margin) AS FLOAT64) AS avg_savings_rate,
+              CAST(SAFE_DIVIDE(COUNTIF(has_salary), COUNT(*)) AS FLOAT64) AS pct_primary,
+              COUNTIF(wellness_band='Stretched') AS stretched
+       FROM ${MART_CASHFLOW}`),
+    q(`SELECT CAST(SUM(total_profit_paid) AS FLOAT64) AS total_profit,
+              CAST(AVG(NULLIF(effective_yield,0)) AS FLOAT64) AS avg_yield,
+              COUNT(*) AS earners FROM ${MART_PROFIT}`),
+  ]);
+  return { bands, primary, trend, kpis: kpis[0], profit: profit[0] };
+}
+
+export async function financingHealthData() {
+  const ARREARS_ORDER = ["Current", "1-30", "31-60", "61-90", "90+"];
+  const [buckets, dpd, kpis, worst] = await Promise.all([
+    q(`SELECT arrears_bucket AS bucket, COUNT(*) AS customers, CAST(SUM(total_arrears) AS FLOAT64) AS arrears
+       FROM ${MART_FINANCING} GROUP BY 1`),
+    q(`SELECT current_dpd AS dpd FROM ${MART_FINANCING} WHERE current_dpd > 0`),
+    q(`SELECT COUNT(*) AS financed, COUNTIF(is_npf) AS npf,
+              CAST(SAFE_DIVIDE(COUNTIF(is_npf), COUNT(*)) AS FLOAT64) AS npf_rate,
+              CAST(AVG(on_time_rate) AS FLOAT64) AS avg_on_time,
+              CAST(SUM(total_arrears) AS FLOAT64) AS total_arrears
+       FROM ${MART_FINANCING}`),
+    q(`SELECT f.customer_id, c.full_name, c.customer_segment, f.current_dpd, f.arrears_bucket,
+              CAST(f.total_arrears AS FLOAT64) AS total_arrears
+       FROM ${MART_FINANCING} f JOIN ${DIM_CUSTOMERS} c USING(customer_id)
+       WHERE f.current_dpd > 0 ORDER BY f.current_dpd DESC, f.total_arrears DESC LIMIT 20`),
+  ]);
+  (buckets as { bucket: string }[]).sort((a, b) => ARREARS_ORDER.indexOf(a.bucket) - ARREARS_ORDER.indexOf(b.bucket));
+  return { buckets, dpd, kpis: kpis[0], worst };
+}
+
+export async function paymentsData() {
+  const [byType, corridors, channels, cash, kpis] = await Promise.all([
+    q(`SELECT transfer_type AS type, COUNT(*) AS txns, CAST(SUM(amount) AS FLOAT64) AS value,
+              CAST(SUM(fee) AS FLOAT64) AS fees
+       FROM ${FCT_TRANSFERS} GROUP BY 1 ORDER BY value DESC`),
+    q(`SELECT beneficiary_country AS corridor, COUNT(*) AS txns, CAST(SUM(amount) AS FLOAT64) AS value
+       FROM ${FCT_TRANSFERS} WHERE transfer_type='INTL' GROUP BY 1 ORDER BY value DESC`),
+    q(`SELECT channel, COUNT(*) AS txns, CAST(SUM(amount) AS FLOAT64) AS amount
+       FROM ${FCT_TELLER} GROUP BY 1 ORDER BY txns DESC`),
+    q(`SELECT txn_type AS type, CAST(SUM(amount) AS FLOAT64) AS amount FROM ${FCT_TELLER} GROUP BY 1`),
+    q(`SELECT (SELECT COUNT(*) FROM ${FCT_TRANSFERS}) AS transfers,
+              (SELECT CAST(SUM(fee) AS FLOAT64) FROM ${FCT_TRANSFERS}) AS fee_income,
+              (SELECT COUNT(DISTINCT customer_id) FROM ${FCT_TRANSFERS} WHERE transfer_type='INTL') AS remitters,
+              (SELECT CAST(AVG(digital_ratio) AS FLOAT64) FROM ${MART_CHANNEL}) AS avg_digital`),
+  ]);
+  return { byType, corridors, channels, cash, kpis: kpis[0] };
+}
+
+export async function campaignsData() {
+  const [campaigns, byChannel, kpis] = await Promise.all([
+    q(`SELECT campaign_name, product_name, channel, sent, opened, clicked, converted,
+              CAST(conversion_rate AS FLOAT64) AS conversion_rate, CAST(roi AS FLOAT64) AS roi
+       FROM ${MART_CAMPAIGNS} ORDER BY conversion_rate DESC`),
+    q(`SELECT channel, SUM(sent) AS sent, SUM(converted) AS converted,
+              CAST(SAFE_DIVIDE(SUM(converted), SUM(sent)) AS FLOAT64) AS conversion_rate
+       FROM ${MART_CAMPAIGNS} GROUP BY 1 ORDER BY conversion_rate DESC`),
+    q(`SELECT SUM(sent) AS sent, SUM(opened) AS opened, SUM(clicked) AS clicked, SUM(converted) AS converted,
+              CAST(SAFE_DIVIDE(SUM(converted), SUM(sent)) AS FLOAT64) AS conversion_rate,
+              CAST(AVG(roi) AS FLOAT64) AS avg_roi
+       FROM ${MART_CAMPAIGNS}`),
+  ]);
+  return { campaigns, byChannel, kpis: kpis[0] };
+}
+
+export async function socialFinanceData() {
+  const [byType, monthly, hajj, itekad, kpis] = await Promise.all([
+    q(`SELECT category AS type, COUNT(DISTINCT customer_id) AS contributors, CAST(SUM(amount) AS FLOAT64) AS total
+       FROM ${FCT_ACCT_TXN} WHERE category IN ('ZAKAT','SADAQAH','WAKAF') GROUP BY 1 ORDER BY total DESC`),
+    q(`SELECT FORMAT_DATE('%Y-%m', DATE_TRUNC(txn_date, MONTH)) AS month, category AS type,
+              CAST(SUM(amount) AS FLOAT64) AS total
+       FROM ${FCT_ACCT_TXN} WHERE category IN ('ZAKAT','SADAQAH','WAKAF') GROUP BY 1,2 ORDER BY 1`),
+    q(`SELECT COUNT(DISTINCT h.customer_id) AS customers
+       FROM ${FCT_HOLDINGS} h WHERE h.product_code = 'SVC-HAJJ'`),
+    q(`SELECT COUNT(DISTINCT h.customer_id) AS customers, CAST(SUM(h.balance) AS FLOAT64) AS total
+       FROM ${FCT_HOLDINGS} h WHERE h.product_code = 'FIN-ITEKAD'`),
+    q(`SELECT COUNT(DISTINCT customer_id) AS zakat_payers,
+              CAST(SUM(IF(category='ZAKAT', amount, 0)) AS FLOAT64) AS zakat_total
+       FROM ${FCT_ACCT_TXN} WHERE category IN ('ZAKAT','SADAQAH','WAKAF')`),
+  ]);
+  return { byType, monthly, hajj: hajj[0], itekad: itekad[0], kpis: kpis[0] };
+}
+
 export async function productsData() {
   const [catalog, byCategory, perCustomer, kpis] = await Promise.all([
     q(`SELECT p.product_code, p.product_name, p.category, p.islamic_contract, p.product_type,
@@ -242,7 +358,7 @@ export async function productsData() {
 
 export async function customerDetail(id: string) {
   const p = { params: { id } };
-  const [mart, dim, accounts, loans, trend, categories, recent, signals, holdings] = await Promise.all([
+  const [mart, dim, accounts, loans, trend, categories, recent, signals, holdings, cashflow, finhealth, channel] = await Promise.all([
     q(`SELECT * FROM ${MART} WHERE customer_id = @id`, p),
     q(`SELECT address, customer_since FROM ${DIM_CUSTOMERS} WHERE customer_id = @id`, p),
     q(`SELECT account_id, account_type, CAST(balance AS FLOAT64) AS balance, status_desc,
@@ -272,12 +388,21 @@ export async function customerDetail(id: string) {
               h.status, CAST(h.open_date AS STRING) AS open_date, CAST(h.balance AS FLOAT64) AS balance
        FROM ${FCT_HOLDINGS} h JOIN ${DIM_PRODUCTS} pr USING(product_code)
        WHERE h.customer_id = @id ORDER BY pr.category, h.balance DESC`, p),
+    q(`SELECT monthly_inflow, monthly_outflow, net_surplus, salary_amount, has_salary,
+              savings_rate, wellness_score, wellness_band FROM ${MART_CASHFLOW} WHERE customer_id = @id`, p),
+    q(`SELECT current_dpd, arrears_bucket, is_npf, on_time_rate, total_arrears
+       FROM ${MART_FINANCING} WHERE customer_id = @id`, p),
+    q(`SELECT primary_channel, digital_ratio, branch_count, atm_count, cdm_count
+       FROM ${MART_CHANNEL} WHERE customer_id = @id`, p),
   ]);
   const profile = mart[0] ? { ...(mart[0] as Mart), ...(dim[0] ?? {}) } : null;
   return {
     profile,
     accounts, loans, trend, categories, recent, holdings,
     signals: signals[0] ?? null,
+    cashflow: cashflow[0] ?? null,
+    finhealth: finhealth[0] ?? null,
+    channel: channel[0] ?? null,
     nba: profile ? nextBestActions(mart[0] as Mart) : [],
   };
 }

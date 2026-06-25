@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, MapPin, TrendingDown, Megaphone, LineChart, ShieldCheck, Landmark, Users, Sparkles, Package,
+  Wallet, Send, HandHeart, AlertTriangle, ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +13,11 @@ const NAV = [
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/personalization", label: "Personalization", icon: Sparkles },
   { href: "/products", label: "Products", icon: Package },
+  { href: "/wellness", label: "Financial wellness", icon: Wallet },
+  { href: "/financing-health", label: "Financing health", icon: AlertTriangle },
+  { href: "/payments", label: "Payments & channels", icon: ArrowLeftRight },
+  { href: "/campaigns", label: "Campaigns", icon: Send },
+  { href: "/social-finance", label: "Social finance", icon: HandHeart },
   { href: "/demographics", label: "Demographics", icon: MapPin },
   { href: "/churn", label: "Churn risk", icon: TrendingDown },
   { href: "/marketing", label: "Marketing / NBA", icon: Megaphone },

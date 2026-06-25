@@ -1,0 +1,41 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Monthly KPI history from balance snapshots + transaction facts + customer tenure — enables real month-over-month growth for the Executive overview.",
+  assertions: { uniqueKey: ["month"] },
+  columns: {
+    month: "Snapshot month (first of month).",
+    customers: "Customers acquired up to month end (cumulative).",
+    total_savings: "Sum of SV balances that month.",
+    total_deposits: "Sum of DP balances that month.",
+    total_card_spend: "Card purchase spend in that month."
+  }
+}
+
+WITH months AS (
+  SELECT DATE_TRUNC(month, MONTH) AS month FROM ${ref("fct_balance_history")} GROUP BY 1
+),
+bal AS (
+  SELECT b.month,
+    SUM(IF(a.account_type = 'SV', b.balance, 0)) AS total_savings,
+    SUM(IF(a.account_type = 'DP', b.balance, 0)) AS total_deposits
+  FROM ${ref("fct_balance_history")} b
+  JOIN ${ref("dim_accounts")} a USING(account_id)
+  GROUP BY 1
+),
+spend AS (
+  SELECT DATE_TRUNC(d, MONTH) AS month, SUM(amt) AS total_card_spend FROM (
+    SELECT transaction_date AS d, transaction_amount AS amt FROM ${ref("fct_credit_card_transactions")} WHERE transaction_type = 'DEBIT'
+    UNION ALL SELECT transaction_date, transaction_amount FROM ${ref("fct_debit_card_transactions")} WHERE transaction_type = 'DEBIT'
+  ) GROUP BY 1
+)
+SELECT
+  m.month,
+  (SELECT COUNT(*) FROM ${ref("dim_customers")} c WHERE c.customer_since <= LAST_DAY(m.month)) AS customers,
+  CAST(bal.total_savings AS FLOAT64) AS total_savings,
+  CAST(bal.total_deposits AS FLOAT64) AS total_deposits,
+  CAST(COALESCE(spend.total_card_spend, 0) AS FLOAT64) AS total_card_spend
+FROM months m
+LEFT JOIN bal USING(month)
+LEFT JOIN spend USING(month)
+ORDER BY m.month

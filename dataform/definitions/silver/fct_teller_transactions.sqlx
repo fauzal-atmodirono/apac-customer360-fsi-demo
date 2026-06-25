@@ -1,0 +1,27 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Cash transactions across branch/ATM/CDM channels from AS400_TELLER_TXN.",
+  assertions: { uniqueKey: ["teller_id"], nonNull: ["teller_id", "customer_id"] },
+  columns: {
+    teller_id: "Unique teller transaction ID.",
+    customer_id: "Owning customer CIF.",
+    account_id: "Account.",
+    txn_date: "Transaction date.",
+    amount: "Cash amount.",
+    txn_type: "CASH_DEP / CASH_WD.",
+    channel: "BRANCH / ATM / CDM.",
+    branch_region: "Region where the transaction occurred."
+  }
+}
+
+SELECT
+  TRIM(TELLERID) AS teller_id,
+  TRIM(TL_CIF) AS customer_id,
+  TRIM(ACCNO) AS account_id,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(TXN_DT AS STRING)) AS txn_date,
+  CAST(TXN_AMT AS NUMERIC) AS amount,
+  UPPER(TRIM(TXN_TYPE)) AS txn_type,
+  UPPER(TRIM(CHANNEL)) AS channel,
+  UPPER(TRIM(BRANCH_REGION)) AS branch_region
+FROM ${ref("AS400_TELLER_TXN")}
