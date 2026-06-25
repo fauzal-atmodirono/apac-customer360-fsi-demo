@@ -22,6 +22,9 @@ type Detail = {
   categories: { category: string; spend: number }[];
   recent: Record<string, unknown>[];
   holdings: { product_name: string; category: string; islamic_contract: string; holding_kind: string; status: string; open_date: string | null; balance: number | null }[];
+  cashflow: Record<string, string | number | boolean | null> | null;
+  finhealth: Record<string, string | number | boolean | null> | null;
+  channel: Record<string, string | number | null> | null;
   signals: Record<string, string | number | null> | null;
   nba: { title: string; reason: string; priority: "High" | "Medium" | "Low" }[];
 };
@@ -50,6 +53,9 @@ export default function CustomerDetailPage() {
   const seg = String(p.propensity_score_segment);
   const churn = String(p.churn_risk_segment);
   const s = data.signals;
+  const cf = data.cashflow;
+  const fh = data.finhealth;
+  const ch = data.channel;
   const nbp = s ? [
     { product: "SMART Mortgage HOME-i", score: num(s.p_mortgage) },
     { product: "Term Investment-i", score: num(s.p_term_deposit) },
@@ -57,6 +63,9 @@ export default function CustomerDetailPage() {
     { product: "SURIA Investment-i", score: num(s.p_investment) },
     { product: "Ar-Rahnu / R&R", score: num(s.p_consolidation) },
   ].sort((a, b) => b.score - a.score) : [];
+  const catTotal = data.categories.reduce((a, c) => a + num(c.spend), 0) || 1;
+  const topCatRow = data.categories[0];
+  const vel = s ? num(s.spend_velocity_pct) : null;
 
   return (
     <div className="space-y-5">
@@ -159,6 +168,30 @@ export default function CustomerDetailPage() {
         </div>
       )}
 
+      {/* Cashflow & wellness */}
+      {cf && (
+        <Card className="p-5">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <Wallet className="h-4 w-4 text-primary" /> Cashflow & wellness
+            <Badge variant={String(cf.wellness_band) === "Stretched" ? "danger" : String(cf.wellness_band) === "Moderate" ? "warning" : "success"} className="ml-1">
+              {String(cf.wellness_band)} · {num(cf.wellness_score)}/100
+            </Badge>
+          </h3>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3 lg:grid-cols-6">
+            <Stat label="Monthly inflow" value={money(cf.monthly_inflow)} />
+            <Stat label="Monthly outflow" value={money(cf.monthly_outflow)} />
+            <Stat label="Net surplus" value={money(cf.net_surplus)} />
+            <Stat label="Salary" value={cf.has_salary ? money(cf.salary_amount) : "—"} />
+            <Stat label="Savings rate" value={`${(num(cf.savings_rate) * 100).toFixed(0)}%`} />
+            <Stat label="Primary bank" value={cf.has_salary ? "Yes" : "No"} />
+            {fh && <Stat label="Financing arrears" value={String(fh.arrears_bucket)} />}
+            {fh && <Stat label="On-time rate" value={`${(num(fh.on_time_rate) * 100).toFixed(0)}%`} />}
+            {ch && <Stat label="Primary channel" value={String(ch.primary_channel)} />}
+            {ch && <Stat label="Self-service" value={`${(num(ch.digital_ratio) * 100).toFixed(0)}%`} />}
+          </div>
+        </Card>
+      )}
+
       {/* Products held */}
       <Card className="p-5">
         <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
@@ -187,12 +220,18 @@ export default function CustomerDetailPage() {
 
       {/* Spending */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Spend trend (90d, weekly)">
+        <ChartCard title="Spend trend (90d, weekly)"
+          caption={vel != null
+            ? <>Card spend is <b>{vel >= 0 ? "+" : ""}{vel.toFixed(0)}%</b> vs the prior 30 days — {vel >= 0 ? "rising engagement; a strong moment for a limit increase or rewards offer" : "cooling spend; consider a re-engagement nudge before it lapses"}.</>
+            : <>Weekly credit vs debit spend over the trailing 90 days.</>}>
           {data.trend.length
             ? <MultiLine data={data.trend} indexKey="week" seriesKey="channel" valueKey="spend" colorMap={CHANNEL_COLORS} />
             : <p className="py-12 text-center text-sm text-muted-foreground">No card activity.</p>}
         </ChartCard>
-        <ChartCard title="Category mix (90d)">
+        <ChartCard title="Category mix (90d)"
+          caption={topCatRow
+            ? <><b>{String(topCatRow.category)}</b> is <b>{(num(topCatRow.spend) / catTotal * 100).toFixed(0)}%</b> of card spend — the natural hook for a personalised category-linked reward.</>
+            : <>No card activity in the last 90 days.</>}>
           {data.categories.length
             ? <Donut data={data.categories} nameKey="category" valueKey="spend" />
             : <p className="py-12 text-center text-sm text-muted-foreground">No card activity.</p>}

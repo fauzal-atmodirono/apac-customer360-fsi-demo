@@ -18,7 +18,7 @@ export function ChartCard({
       <h3 className="mb-3 text-sm font-semibold tracking-tight">{title}</h3>
       <div className="flex-1">{children}</div>
       {caption && (
-        <p className="mt-3 flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground [&_b]:font-semibold [&_b]:text-foreground">
+        <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-muted-foreground [&_b]:font-semibold [&_b]:text-foreground">
           <span className="text-primary">💡</span><span>{caption}</span>
         </p>
       )}

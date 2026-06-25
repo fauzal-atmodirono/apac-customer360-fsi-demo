@@ -1,0 +1,23 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Marketing campaign catalog from AS400_CAMPAIGN_MAST; each campaign promotes a product through a channel.",
+  assertions: { uniqueKey: ["campaign_id"], nonNull: ["campaign_id"] },
+  columns: {
+    campaign_id: "Campaign ID (primary key).",
+    campaign_name: "Campaign name.",
+    product_code: "Promoted product (FK to dim_products).",
+    channel: "Outreach channel (EMAIL / SMS / APP / BRANCH).",
+    start_date: "Campaign start.",
+    end_date: "Campaign end."
+  }
+}
+
+SELECT
+  TRIM(CAMPID) AS campaign_id,
+  TRIM(CAMPNAME) AS campaign_name,
+  TRIM(PRDCODE) AS product_code,
+  UPPER(TRIM(CHANNEL)) AS channel,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(CMP_START AS STRING)) AS start_date,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(CMP_END AS STRING)) AS end_date
+FROM ${ref("AS400_CAMPAIGN_MAST")}

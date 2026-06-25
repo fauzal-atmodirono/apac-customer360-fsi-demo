@@ -7,7 +7,9 @@
 const bronze = dataform.projectConfig.vars.bronze_dataset;
 
 ["AS400_CUST_MAST", "AS400_SVDP_MAST", "AS400_CC_TXN", "AS400_DC_TXN", "AS400_LOAN_MAST",
- "AS400_PRODUCT_MAST", "AS400_PROD_HOLD"].forEach((name) => {
+ "AS400_PRODUCT_MAST", "AS400_PROD_HOLD", "AS400_ACCT_TXN", "AS400_BAL_HIST",
+ "AS400_CAMPAIGN_MAST", "AS400_CAMPAIGN_RESP", "AS400_FIN_REPAY", "AS400_XFER_TXN",
+ "AS400_PROFIT_DIST", "AS400_TELLER_TXN"].forEach((name) => {
   declare({
     schema: bronze,
     name: name,

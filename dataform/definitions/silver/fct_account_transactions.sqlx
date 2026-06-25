@@ -1,0 +1,25 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Conformed account-ledger transactions (salary credits, bill payments, transfers, and Islamic social-finance payments) from AS400_ACCT_TXN.",
+  assertions: { uniqueKey: ["txn_id"], nonNull: ["txn_id", "customer_id"] },
+  columns: {
+    txn_id: "Unique ledger transaction ID.",
+    customer_id: "Owning customer CIF.",
+    account_id: "Account the transaction posts to.",
+    txn_date: "Transaction date.",
+    amount: "Transaction amount.",
+    direction: "CREDIT (inflow) / DEBIT (outflow).",
+    category: "SALARY / BILL_UTILITY / BILL_TELCO / LOAN_REPAY / DUITNOW_IN / DUITNOW_OUT / ZAKAT / SADAQAH / WAKAF."
+  }
+}
+
+SELECT
+  TRIM(TXNID) AS txn_id,
+  TRIM(AT_CIF) AS customer_id,
+  TRIM(ACCNO) AS account_id,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(AT_DATE AS STRING)) AS txn_date,
+  CAST(AT_AMT AS NUMERIC) AS amount,
+  CASE UPPER(TRIM(AT_TYPE)) WHEN 'C' THEN 'CREDIT' WHEN 'D' THEN 'DEBIT' ELSE 'UNKNOWN' END AS direction,
+  UPPER(TRIM(AT_CAT)) AS category
+FROM ${ref("AS400_ACCT_TXN")}

@@ -1,0 +1,61 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Per-customer cashflow & financial-wellness signals derived from account-ledger transactions: inflow/outflow, surplus, salary (primary-bank), savings rate, and a 0-100 wellness score.",
+  assertions: { uniqueKey: ["customer_id"] },
+  columns: {
+    customer_id: "Primary key.",
+    monthly_inflow: "Average monthly credit inflow.",
+    monthly_outflow: "Average monthly debit outflow.",
+    net_surplus: "monthly_inflow - monthly_outflow.",
+    salary_amount: "Average monthly salary credit (0 if none).",
+    has_salary: "TRUE when salary is regularly credited (primary-bank indicator).",
+    savings_rate: "net_surplus / monthly_inflow.",
+    surplus_margin: "Clamped surplus margin (0-1).",
+    wellness_score: "0-100 composite (surplus margin, salary regularity, savings buffer).",
+    wellness_band: "Healthy / Moderate / Stretched."
+  }
+}
+
+WITH agg AS (
+  SELECT
+    customer_id,
+    SUM(IF(direction = 'CREDIT', amount, 0)) AS total_in,
+    SUM(IF(direction = 'DEBIT', amount, 0)) AS total_out,
+    SUM(IF(category = 'SALARY', amount, 0)) AS total_salary,
+    COUNTIF(category = 'SALARY') AS salary_months,
+    COUNT(DISTINCT DATE_TRUNC(txn_date, MONTH)) AS active_months
+  FROM ${ref("fct_account_transactions")}
+  GROUP BY 1
+),
+base AS (
+  SELECT
+    a.customer_id,
+    SAFE_DIVIDE(a.total_in, NULLIF(a.active_months, 0)) AS monthly_inflow,
+    SAFE_DIVIDE(a.total_out, NULLIF(a.active_months, 0)) AS monthly_outflow,
+    SAFE_DIVIDE(a.total_salary, NULLIF(a.salary_months, 0)) AS salary_amount,
+    a.salary_months >= 3 AS has_salary,
+    COALESCE(c.total_savings_balance, 0) AS savings
+  FROM agg a
+  LEFT JOIN ${ref("mart_customer_360")} c ON c.customer_id = a.customer_id
+)
+SELECT
+  customer_id,
+  ROUND(monthly_inflow, 2) AS monthly_inflow,
+  ROUND(monthly_outflow, 2) AS monthly_outflow,
+  ROUND(monthly_inflow - monthly_outflow, 2) AS net_surplus,
+  ROUND(COALESCE(salary_amount, 0), 2) AS salary_amount,
+  has_salary,
+  ROUND(SAFE_DIVIDE(monthly_inflow - monthly_outflow, NULLIF(monthly_inflow, 0)), 3) AS savings_rate,
+  ROUND(GREATEST(0, LEAST(1, SAFE_DIVIDE(monthly_inflow - monthly_outflow, NULLIF(monthly_inflow, 0)))), 3) AS surplus_margin,
+  CAST(ROUND(100 * (
+      0.5 * GREATEST(0, LEAST(1, SAFE_DIVIDE(monthly_inflow - monthly_outflow, NULLIF(monthly_inflow, 0))))
+    + 0.3 * IF(has_salary, 1, 0)
+    + 0.2 * LEAST(1, SAFE_DIVIDE(savings, NULLIF(monthly_outflow * 6, 0)))
+  )) AS INT64) AS wellness_score,
+  CASE
+    WHEN 100 * (0.5 * GREATEST(0, LEAST(1, SAFE_DIVIDE(monthly_inflow - monthly_outflow, NULLIF(monthly_inflow, 0)))) + 0.3 * IF(has_salary, 1, 0) + 0.2 * LEAST(1, SAFE_DIVIDE(savings, NULLIF(monthly_outflow * 6, 0)))) >= 66 THEN 'Healthy'
+    WHEN 100 * (0.5 * GREATEST(0, LEAST(1, SAFE_DIVIDE(monthly_inflow - monthly_outflow, NULLIF(monthly_inflow, 0)))) + 0.3 * IF(has_salary, 1, 0) + 0.2 * LEAST(1, SAFE_DIVIDE(savings, NULLIF(monthly_outflow * 6, 0)))) >= 33 THEN 'Moderate'
+    ELSE 'Stretched'
+  END AS wellness_band
+FROM base

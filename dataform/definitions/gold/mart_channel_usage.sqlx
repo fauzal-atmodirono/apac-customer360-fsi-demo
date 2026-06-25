@@ -1,0 +1,28 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Per-customer cash channel usage (branch/ATM/CDM), cash in/out, primary channel, and self-service ratio.",
+  assertions: { uniqueKey: ["customer_id"] },
+  columns: {
+    customer_id: "Primary key.",
+    branch_count: "Branch cash transactions.",
+    atm_count: "ATM cash transactions.",
+    cdm_count: "CDM cash transactions.",
+    cash_in: "Total cash deposited.",
+    cash_out: "Total cash withdrawn.",
+    primary_channel: "Most-used cash channel.",
+    digital_ratio: "Self-service (ATM+CDM) share of cash transactions."
+  }
+}
+
+SELECT
+  customer_id,
+  COUNTIF(channel = 'BRANCH') AS branch_count,
+  COUNTIF(channel = 'ATM') AS atm_count,
+  COUNTIF(channel = 'CDM') AS cdm_count,
+  CAST(SUM(IF(txn_type = 'CASH_DEP', amount, 0)) AS FLOAT64) AS cash_in,
+  CAST(SUM(IF(txn_type = 'CASH_WD', amount, 0)) AS FLOAT64) AS cash_out,
+  APPROX_TOP_COUNT(channel, 1)[OFFSET(0)].value AS primary_channel,
+  ROUND(SAFE_DIVIDE(COUNTIF(channel IN ('ATM', 'CDM')), COUNT(*)), 3) AS digital_ratio
+FROM ${ref("fct_teller_transactions")}
+GROUP BY 1

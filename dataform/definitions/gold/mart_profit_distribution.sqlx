@@ -1,0 +1,23 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Per-customer Islamic profit earned and effective yield (annualized profit over deposit + investment balances).",
+  assertions: { uniqueKey: ["customer_id"] },
+  columns: {
+    customer_id: "Primary key.",
+    total_profit_paid: "Profit credited over the period (~6 months).",
+    effective_yield: "Annualized profit ÷ (savings + deposits), %."
+  }
+}
+
+WITH p AS (
+  SELECT customer_id, SUM(profit_amount) AS profit
+  FROM ${ref("fct_profit_distribution")}
+  GROUP BY 1
+)
+SELECT
+  p.customer_id,
+  CAST(p.profit AS FLOAT64) AS total_profit_paid,
+  CAST(ROUND(SAFE_DIVIDE(p.profit * 2, NULLIF(c.total_savings_balance + c.total_deposit_balance, 0)) * 100, 2) AS FLOAT64) AS effective_yield
+FROM p
+LEFT JOIN ${ref("mart_customer_360")} c ON c.customer_id = p.customer_id

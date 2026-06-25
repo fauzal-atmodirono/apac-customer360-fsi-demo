@@ -1,0 +1,44 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Per-campaign performance funnel (sent → opened → clicked → converted), conversion rate, and a synthetic ROI based on channel cost and per-conversion profit.",
+  assertions: { uniqueKey: ["campaign_id"] },
+  columns: {
+    campaign_id: "Campaign ID.",
+    campaign_name: "Campaign name.",
+    product_code: "Promoted product.",
+    product_name: "Promoted product name.",
+    channel: "Outreach channel.",
+    sent: "Customers targeted.",
+    opened: "Opened count.",
+    clicked: "Clicked count.",
+    converted: "Converted count.",
+    open_rate: "opened / sent.",
+    conversion_rate: "converted / sent.",
+    roi: "Synthetic ROI = (converted*profit - sent*cost_per_contact) / (sent*cost_per_contact)."
+  }
+}
+
+WITH funnel AS (
+  SELECT
+    c.campaign_id, c.campaign_name, c.product_code, c.channel,
+    COUNT(*) AS sent,
+    COUNTIF(r.opened) AS opened,
+    COUNTIF(r.clicked) AS clicked,
+    COUNTIF(r.converted) AS converted
+  FROM ${ref("dim_campaigns")} c
+  JOIN ${ref("fct_campaign_responses")} r ON r.campaign_id = c.campaign_id
+  GROUP BY 1, 2, 3, 4
+)
+SELECT
+  f.campaign_id, f.campaign_name, f.product_code,
+  COALESCE(p.product_name, f.product_code) AS product_name,
+  f.channel, f.sent, f.opened, f.clicked, f.converted,
+  ROUND(SAFE_DIVIDE(f.opened, f.sent), 3) AS open_rate,
+  ROUND(SAFE_DIVIDE(f.converted, f.sent), 3) AS conversion_rate,
+  ROUND(SAFE_DIVIDE(
+    f.converted * 500 - f.sent * CASE f.channel WHEN 'BRANCH' THEN 15 WHEN 'EMAIL' THEN 2 WHEN 'SMS' THEN 1 ELSE 0.5 END,
+    NULLIF(f.sent * CASE f.channel WHEN 'BRANCH' THEN 15 WHEN 'EMAIL' THEN 2 WHEN 'SMS' THEN 1 ELSE 0.5 END, 0)
+  ), 2) AS roi
+FROM funnel f
+LEFT JOIN ${ref("dim_products")} p ON p.product_code = f.product_code

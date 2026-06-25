@@ -1,0 +1,29 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Financing repayment schedule + actuals from AS400_FIN_REPAY (PAID / LATE / MISSED with days-past-due).",
+  assertions: { uniqueKey: ["repayment_id"], nonNull: ["repayment_id", "customer_id", "loan_id"] },
+  columns: {
+    repayment_id: "Unique repayment row ID.",
+    customer_id: "Owning customer CIF.",
+    loan_id: "Financing account (FK to dim_loans).",
+    due_date: "Installment due date.",
+    due_amount: "Scheduled installment amount.",
+    paid_date: "Actual payment date (NULL if missed).",
+    paid_amount: "Actual amount paid.",
+    status: "PAID / LATE / MISSED.",
+    days_past_due: "Days past due for this installment."
+  }
+}
+
+SELECT
+  TRIM(REPAYID) AS repayment_id,
+  TRIM(FR_CIF) AS customer_id,
+  TRIM(LN_NO) AS loan_id,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(DUE_DT AS STRING)) AS due_date,
+  CAST(DUE_AMT AS NUMERIC) AS due_amount,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(PAID_DT AS STRING)) AS paid_date,
+  CAST(PAID_AMT AS NUMERIC) AS paid_amount,
+  UPPER(TRIM(STATUS)) AS status,
+  CAST(DPD AS INT64) AS days_past_due
+FROM ${ref("AS400_FIN_REPAY")}

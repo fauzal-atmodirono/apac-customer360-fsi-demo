@@ -1,0 +1,24 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Per-customer fund-transfer behaviour: volume, value, fee income, and remittance corridor.",
+  assertions: { uniqueKey: ["customer_id"] },
+  columns: {
+    customer_id: "Primary key.",
+    transfer_count: "Number of transfers.",
+    transfer_value: "Total transferred value.",
+    total_fees: "Total transfer fees paid (fee income).",
+    intl_count: "Number of international remittances.",
+    top_corridor: "Most-used international corridor (NULL if none)."
+  }
+}
+
+SELECT
+  customer_id,
+  COUNT(*) AS transfer_count,
+  CAST(SUM(amount) AS FLOAT64) AS transfer_value,
+  CAST(SUM(fee) AS FLOAT64) AS total_fees,
+  COUNTIF(transfer_type = 'INTL') AS intl_count,
+  APPROX_TOP_COUNT(IF(transfer_type = 'INTL', beneficiary_country, NULL), 1)[OFFSET(0)].value AS top_corridor
+FROM ${ref("fct_transfers")}
+GROUP BY 1
