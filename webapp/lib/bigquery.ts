@@ -27,6 +27,9 @@ export const MART_FINANCING = `\`${PROJECT}.${GOLD}.mart_financing_health\``;
 export const MART_TRANSFERS = `\`${PROJECT}.${GOLD}.mart_transfer_behaviour\``;
 export const MART_PROFIT = `\`${PROJECT}.${GOLD}.mart_profit_distribution\``;
 export const MART_CHANNEL = `\`${PROJECT}.${GOLD}.mart_channel_usage\``;
+export const FCT_COLL_ACT = `\`${PROJECT}.${SILVER}.fct_collection_actions\``;
+export const FCT_RECOVERIES = `\`${PROJECT}.${SILVER}.fct_recoveries\``;
+export const MART_COLLECTIONS = `\`${PROJECT}.${GOLD}.mart_collection_recovery\``;
 
 const SCOPES = ["https://www.googleapis.com/auth/cloud-platform"];
 

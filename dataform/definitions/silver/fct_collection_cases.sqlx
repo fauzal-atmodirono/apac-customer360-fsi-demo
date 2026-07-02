@@ -1,0 +1,27 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Collection cases from AS400_COLL_CASE — one case per delinquent customer x financing account, derived from the repayment ledger (aligned with fct_financing_repayments).",
+  assertions: { uniqueKey: ["case_id"], nonNull: ["case_id", "customer_id", "loan_id"] },
+  columns: {
+    case_id: "Unique collection case ID (primary key).",
+    customer_id: "Delinquent customer CIF (FK to dim_customers).",
+    loan_id: "Delinquent financing account (FK to dim_loans).",
+    open_date: "Case open date (~first missed installment).",
+    stage: "Collections stage: SOFT_REMINDER / INTENSIVE / FIELD_VISIT / RECOVERY_LEGAL.",
+    collector: "Assigned collector ID.",
+    outstanding: "Arrears amount under collection.",
+    case_status: "ACTIVE / PTP_OBTAINED / PARTIAL_RECOVERY / RECOVERED / RESTRUCTURED / LEGAL / WRITTEN_OFF."
+  }
+}
+
+SELECT
+  TRIM(CASEID) AS case_id,
+  TRIM(CC_CIF) AS customer_id,
+  TRIM(LN_NO) AS loan_id,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(OPEN_DT AS STRING)) AS open_date,
+  UPPER(TRIM(STAGE)) AS stage,
+  TRIM(COLLECTOR) AS collector,
+  CAST(OUTSTANDING AS NUMERIC) AS outstanding,
+  UPPER(TRIM(CASE_STAT)) AS case_status
+FROM ${ref("AS400_COLL_CASE")}

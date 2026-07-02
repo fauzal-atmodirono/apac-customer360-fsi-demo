@@ -1,5 +1,5 @@
 import "server-only";
-import { runQuery, PROJECT, GOLD, SILVER, MART, PERS, DIM_CUSTOMERS, FCT_CC, FCT_DC, DIM_PRODUCTS, FCT_HOLDINGS, FCT_ACCT_TXN, MART_CASHFLOW, MART_CAMPAIGNS, MART_KPI_HISTORY, FCT_FINREPAY, FCT_TRANSFERS, FCT_TELLER, MART_FINANCING, MART_TRANSFERS, MART_PROFIT, MART_CHANNEL } from "./bigquery";
+import { runQuery, PROJECT, GOLD, SILVER, MART, PERS, DIM_CUSTOMERS, FCT_CC, FCT_DC, DIM_PRODUCTS, FCT_HOLDINGS, FCT_ACCT_TXN, MART_CASHFLOW, MART_CAMPAIGNS, MART_KPI_HISTORY, FCT_FINREPAY, FCT_TRANSFERS, FCT_TELLER, MART_FINANCING, MART_TRANSFERS, MART_PROFIT, MART_CHANNEL, FCT_COLL_ACT, FCT_RECOVERIES, MART_COLLECTIONS } from "./bigquery";
 import { money } from "./format";
 
 // Server-side BigQuery Standard SQL for the dashboard API routes.
@@ -300,6 +300,41 @@ export async function paymentsData() {
   return { byType, corridors, channels, cash, kpis: kpis[0] };
 }
 
+export async function collectionsData() {
+  const STAGE_ORDER = ["SOFT_REMINDER", "INTENSIVE", "FIELD_VISIT", "RECOVERY_LEGAL"];
+  const [kpis, byStage, statusMix, trend, channel, worklist] = await Promise.all([
+    q(`SELECT
+         COUNTIF(case_status IN ('ACTIVE','PTP_OBTAINED','PARTIAL_RECOVERY','LEGAL')) AS active_cases,
+         COUNT(*) AS total_cases,
+         CAST(SUM(IF(case_status NOT IN ('RECOVERED','RESTRUCTURED','WRITTEN_OFF'), outstanding - recovered_amount, 0)) AS FLOAT64) AS under_collection,
+         CAST(SUM(recovered_amount) AS FLOAT64) AS recovered,
+         CAST(SAFE_DIVIDE(SUM(recovered_amount), SUM(outstanding)) AS FLOAT64) AS recovery_rate,
+         CAST(SUM(IF(is_restructured, outstanding, 0)) AS FLOAT64) AS restructured_amount
+       FROM ${MART_COLLECTIONS}`),
+    q(`SELECT stage, COUNT(*) AS cases, CAST(SUM(outstanding) AS FLOAT64) AS outstanding,
+              CAST(SUM(recovered_amount) AS FLOAT64) AS recovered
+       FROM ${MART_COLLECTIONS} GROUP BY 1`),
+    q(`SELECT case_status AS status, COUNT(*) AS cases FROM ${MART_COLLECTIONS} GROUP BY 1 ORDER BY cases DESC`),
+    q(`SELECT FORMAT_DATE('%Y-%m', DATE_TRUNC(recovery_date, MONTH)) AS month, recovery_type AS type,
+              CAST(SUM(amount) AS FLOAT64) AS amount
+       FROM ${FCT_RECOVERIES} WHERE recovery_type != 'WRITEOFF' GROUP BY 1, 2 ORDER BY 1`),
+    q(`SELECT channel, COUNT(*) AS actions,
+              CAST(SAFE_DIVIDE(COUNTIF(is_contact), COUNT(*)) AS FLOAT64) AS contact_rate,
+              CAST(SAFE_DIVIDE(COUNTIF(ptp_kept), NULLIF(COUNTIF(ptp_kept IS NOT NULL), 0)) AS FLOAT64) AS ptp_kept_rate
+       FROM ${FCT_COLL_ACT} GROUP BY 1 ORDER BY actions DESC`),
+    q(`SELECT m.case_id, m.customer_id, d.full_name, m.stage, m.case_status, m.collector,
+              f.current_dpd, CAST(m.outstanding AS FLOAT64) AS outstanding,
+              CAST(m.recovered_amount AS FLOAT64) AS recovered, m.ptp_made, m.ptp_kept
+       FROM ${MART_COLLECTIONS} m
+       JOIN ${DIM_CUSTOMERS} d USING(customer_id)
+       LEFT JOIN ${MART_FINANCING} f USING(customer_id)
+       WHERE m.case_status NOT IN ('RECOVERED','RESTRUCTURED','WRITTEN_OFF')
+       ORDER BY m.outstanding - m.recovered_amount DESC LIMIT 15`),
+  ]);
+  (byStage as { stage: string }[]).sort((a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage));
+  return { kpis: kpis[0], byStage, statusMix, trend, channel, worklist };
+}
+
 export async function campaignsData() {
   const [campaigns, byChannel, kpis] = await Promise.all([
     q(`SELECT campaign_name, product_name, channel, sent, opened, clicked, converted,
@@ -358,7 +393,7 @@ export async function productsData() {
 
 export async function customerDetail(id: string) {
   const p = { params: { id } };
-  const [mart, dim, accounts, loans, trend, categories, recent, signals, holdings, cashflow, finhealth, channel] = await Promise.all([
+  const [mart, dim, accounts, loans, trend, categories, recent, signals, holdings, cashflow, finhealth, channel, collections] = await Promise.all([
     q(`SELECT * FROM ${MART} WHERE customer_id = @id`, p),
     q(`SELECT address, customer_since FROM ${DIM_CUSTOMERS} WHERE customer_id = @id`, p),
     q(`SELECT account_id, account_type, CAST(balance AS FLOAT64) AS balance, status_desc,
@@ -394,6 +429,9 @@ export async function customerDetail(id: string) {
        FROM ${MART_FINANCING} WHERE customer_id = @id`, p),
     q(`SELECT primary_channel, digital_ratio, branch_count, atm_count, cdm_count
        FROM ${MART_CHANNEL} WHERE customer_id = @id`, p),
+    q(`SELECT case_id, stage, case_status, CAST(outstanding AS FLOAT64) AS outstanding,
+              CAST(recovered_amount AS FLOAT64) AS recovered, ptp_made, ptp_kept
+       FROM ${MART_COLLECTIONS} WHERE customer_id = @id ORDER BY outstanding DESC`, p),
   ]);
   const profile = mart[0] ? { ...(mart[0] as Mart), ...(dim[0] ?? {}) } : null;
   return {
@@ -403,6 +441,7 @@ export async function customerDetail(id: string) {
     cashflow: cashflow[0] ?? null,
     finhealth: finhealth[0] ?? null,
     channel: channel[0] ?? null,
+    collections,
     nba: profile ? nextBestActions(mart[0] as Mart) : [],
   };
 }

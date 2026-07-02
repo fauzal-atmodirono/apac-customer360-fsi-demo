@@ -1,0 +1,31 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Collection action log from AS400_COLL_ACT — SMS/call/letter/visit outreach with outcomes including promises-to-pay (PTP).",
+  assertions: { uniqueKey: ["action_id"], nonNull: ["action_id", "case_id"] },
+  columns: {
+    action_id: "Unique action ID (primary key).",
+    case_id: "Collection case (FK to fct_collection_cases).",
+    action_date: "Date of the outreach action.",
+    channel: "SMS / CALL / EMAIL / LETTER / VISIT.",
+    outcome: "NO_ANSWER / CONTACTED / DISPUTE / PROMISE_TO_PAY.",
+    ptp_amount: "Promised amount (NULL unless a PTP).",
+    ptp_date: "Promised payment date (NULL unless a PTP).",
+    is_ptp: "TRUE when the outcome is a promise-to-pay.",
+    ptp_kept: "TRUE kept / FALSE broken / NULL pending or not a PTP.",
+    is_contact: "TRUE when the customer was reached (CONTACTED / DISPUTE / PROMISE_TO_PAY)."
+  }
+}
+
+SELECT
+  TRIM(ACTID) AS action_id,
+  TRIM(CASEID) AS case_id,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(ACT_DT AS STRING)) AS action_date,
+  UPPER(TRIM(CHANNEL)) AS channel,
+  UPPER(TRIM(OUTCOME)) AS outcome,
+  SAFE_CAST(PTP_AMT AS NUMERIC) AS ptp_amount,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(PTP_DT AS STRING)) AS ptp_date,
+  UPPER(TRIM(OUTCOME)) = 'PROMISE_TO_PAY' AS is_ptp,
+  CASE UPPER(TRIM(PTP_KEPT)) WHEN 'Y' THEN TRUE WHEN 'N' THEN FALSE ELSE NULL END AS ptp_kept,
+  UPPER(TRIM(OUTCOME)) IN ('CONTACTED', 'DISPUTE', 'PROMISE_TO_PAY') AS is_contact
+FROM ${ref("AS400_COLL_ACT")}

@@ -25,6 +25,7 @@ type Detail = {
   cashflow: Record<string, string | number | boolean | null> | null;
   finhealth: Record<string, string | number | boolean | null> | null;
   channel: Record<string, string | number | null> | null;
+  collections: { case_id: string; stage: string; case_status: string; outstanding: number; recovered: number; ptp_made: number; ptp_kept: number }[];
   signals: Record<string, string | number | null> | null;
   nba: { title: string; reason: string; priority: "High" | "Medium" | "Low" }[];
 };
@@ -56,6 +57,7 @@ export default function CustomerDetailPage() {
   const cf = data.cashflow;
   const fh = data.finhealth;
   const ch = data.channel;
+  const coll = data.collections?.[0] ?? null;
   const nbp = s ? [
     { product: "SMART Mortgage HOME-i", score: num(s.p_mortgage) },
     { product: "Term Investment-i", score: num(s.p_term_deposit) },
@@ -189,6 +191,16 @@ export default function CustomerDetailPage() {
             {ch && <Stat label="Primary channel" value={String(ch.primary_channel)} />}
             {ch && <Stat label="Self-service" value={`${(num(ch.digital_ratio) * 100).toFixed(0)}%`} />}
           </div>
+          {coll && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-danger/30 bg-danger/5 px-3 py-2 text-sm">
+              <Badge variant="danger">In collections</Badge>
+              <span className="text-muted-foreground">Stage <b className="text-foreground">{coll.stage}</b> · Status <b className="text-foreground">{coll.case_status}</b></span>
+              <span className="ml-auto tabular-nums">
+                <b>{money(coll.outstanding)}</b> outstanding · <b className="text-success">{money(coll.recovered)}</b> recovered
+                {num(coll.ptp_made) > 0 && <> · PTP {num(coll.ptp_kept)}/{num(coll.ptp_made)} kept</>}
+              </span>
+            </div>
+          )}
         </Card>
       )}
 
