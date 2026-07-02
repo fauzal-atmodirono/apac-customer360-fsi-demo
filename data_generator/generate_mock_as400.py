@@ -44,7 +44,13 @@ SCHEMAS: dict[str, list[str]] = {
     "AS400_XFER_TXN": ["XFERID", "XF_CIF", "ACCNO", "XFER_DT", "XFER_AMT", "XFER_TYPE", "BENEF_BANK", "BENEF_COUNTRY", "FEE", "DIRECTION"],
     "AS400_PROFIT_DIST": ["DISTID", "PD_CIF", "ACCNO", "PRDCODE", "DIST_DT", "PROFIT_AMT", "RATE"],
     "AS400_TELLER_TXN": ["TELLERID", "TL_CIF", "ACCNO", "TXN_DT", "TXN_AMT", "TXN_TYPE", "CHANNEL", "BRANCH_REGION"],
+    "AS400_COLL_CASE": ["CASEID", "CC_CIF", "LN_NO", "OPEN_DT", "STAGE", "COLLECTOR", "OUTSTANDING", "CASE_STAT"],
+    "AS400_COLL_ACT": ["ACTID", "CASEID", "ACT_DT", "CHANNEL", "OUTCOME", "PTP_AMT", "PTP_DT", "PTP_KEPT"],
+    "AS400_RECOVERY": ["RECID", "CASEID", "RC_CIF", "REC_DT", "REC_AMT", "REC_TYPE"],
 }
+
+# Collections team pool for case assignment.
+COLLECTORS = ["COLL-01", "COLL-02", "COLL-03", "COLL-04", "COLL-05", "COLL-06"]
 
 # Common Malaysia outbound remittance corridors (migrant-worker destinations).
 REMIT_CORRIDORS = ["INDONESIA", "BANGLADESH", "NEPAL", "INDIA", "PHILIPPINES", "PAKISTAN", "MYANMAR"]
@@ -139,6 +145,9 @@ class GeneratedRows:
     xfer_txns: list[list] = field(default_factory=list)
     profit_dist: list[list] = field(default_factory=list)
     teller_txns: list[list] = field(default_factory=list)
+    coll_cases: list[list] = field(default_factory=list)
+    coll_acts: list[list] = field(default_factory=list)
+    recoveries: list[list] = field(default_factory=list)
     accounts: list[list] = field(default_factory=list)
     cards: list[list] = field(default_factory=list)
     debit_cards: list[list] = field(default_factory=list)
@@ -147,7 +156,8 @@ class GeneratedRows:
 
 class Generator:
     def __init__(self, fake: Faker, rng: random.Random, today: date, time_rng: random.Random,
-                 prod_rng: random.Random, fin_rng: random.Random, txn_rng: random.Random):
+                 prod_rng: random.Random, fin_rng: random.Random, txn_rng: random.Random,
+                 coll_rng: random.Random):
         self.fake = fake
         self.rng = rng
         # Separate RNG streams so adding TXNTM / product holdings / finance data does not perturb
@@ -156,6 +166,7 @@ class Generator:
         self.prod_rng = prod_rng
         self.fin_rng = fin_rng
         self.txn_rng = txn_rng
+        self.coll_rng = coll_rng
         self.archetype: dict[str, str] = {}  # cif -> archetype, for product-holding assignment
         self.income: dict[str, float] = {}   # cif -> annual income, for cashflow generation
         self.today = today
@@ -558,6 +569,103 @@ class Generator:
                 self.rows.teller_txns.append([nid("TL"), cif, acct, yyyymmdd(d),
                                               round(r.uniform(50, 3000), 2), typ, ch, region])
 
+    # -- collections & recovery (separate coll_rng; derived from fin_repay) ----------------
+    def build_collections_data(self) -> None:
+        """One collection case per delinquent customer x loan, derived deterministically from
+        the MISSED rows in AS400_FIN_REPAY — guarantees alignment with financing health."""
+        r = self.coll_rng
+
+        def nid(prefix):
+            self._seq += 1
+            return f"{prefix}{self._seq}"
+
+        # Group MISSED installments -> (cif, ln_no): max DPD + total arrears.
+        delinquent: dict[tuple[str, str], dict] = {}
+        for row in self.rows.fin_repay:  # [REPAYID, FR_CIF, LN_NO, DUE_DT, DUE_AMT, PAID_DT, PAID_AMT, STATUS, DPD]
+            if row[7] != "MISSED":
+                continue
+            key = (row[1], row[2])
+            d = delinquent.setdefault(key, {"dpd": 0, "arrears": 0.0})
+            d["dpd"] = max(d["dpd"], int(row[8]))
+            d["arrears"] += float(row[4])
+
+        STAGE_CFG = {  # stage -> (n_actions range, channel weights)
+            "SOFT_REMINDER": ((2, 4), {"SMS": 0.5, "CALL": 0.4, "EMAIL": 0.1}),
+            "INTENSIVE": ((4, 8), {"CALL": 0.5, "SMS": 0.25, "LETTER": 0.25}),
+            "FIELD_VISIT": ((6, 10), {"CALL": 0.4, "LETTER": 0.3, "VISIT": 0.3}),
+            "RECOVERY_LEGAL": ((8, 12), {"LETTER": 0.4, "VISIT": 0.3, "CALL": 0.3}),
+        }
+        npf_writeoffs = 0
+        for (cif, ln_no), d in delinquent.items():
+            dpd, arrears = d["dpd"], round(d["arrears"], 2)
+            stage = ("SOFT_REMINDER" if dpd <= 30 else "INTENSIVE" if dpd <= 60
+                     else "FIELD_VISIT" if dpd <= 90 else "RECOVERY_LEGAL")
+            case_id = nid("CS")
+            open_dt = self.today - timedelta(days=dpd - r.randint(0, 5))
+
+            # Actions (SMS/call/letter/visit) with outcomes incl. promises-to-pay.
+            (lo, hi), weights = STAGE_CFG[stage]
+            recovered, ptp_any = 0.0, False
+            for _ in range(r.randint(lo, hi)):
+                act_dt = open_dt + timedelta(days=r.randint(0, max(1, dpd)))
+                act_dt = min(act_dt, self.today)
+                channel = r.choices(list(weights), list(weights.values()))[0]
+                outcome = r.choices(["NO_ANSWER", "CONTACTED", "DISPUTE", "PROMISE_TO_PAY"],
+                                    [0.30, 0.32, 0.05, 0.33])[0]
+                ptp_amt, ptp_dt, ptp_kept = "", "", ""
+                if outcome == "PROMISE_TO_PAY":
+                    ptp_any = True
+                    amt = round(arrears * r.uniform(0.2, 0.8), 2)
+                    due = act_dt + timedelta(days=r.randint(3, 14))
+                    ptp_amt, ptp_dt = amt, yyyymmdd(due)
+                    if due <= self.today:  # promise came due -> kept ~55%
+                        kept = r.random() < 0.55
+                        ptp_kept = "Y" if kept else "N"
+                        if kept and recovered < arrears:
+                            rec = round(min(amt * r.uniform(0.6, 1.0), arrears - recovered), 2)
+                            if rec > 0:
+                                recovered += rec
+                                self.rows.recoveries.append(
+                                    [nid("RC"), case_id, cif, yyyymmdd(due), rec, "PAYMENT"])
+                self.rows.coll_acts.append(
+                    [nid("AC"), case_id, yyyymmdd(act_dt), channel, outcome, ptp_amt, ptp_dt, ptp_kept])
+
+            # Ta'widh: capped Islamic late-payment compensation (1%, non-compounding).
+            if recovered > 0 and r.random() < 0.5:
+                self.rows.recoveries.append(
+                    [nid("RC"), case_id, cif, yyyymmdd(self.today - timedelta(days=r.randint(0, 20))),
+                     round(min(recovered * 0.01, 100.0), 2), "TAWIDH"])
+
+            # Stage outcomes: R&R restructuring for field-stage; write-off/legal for NPF.
+            restructured = written_off = legal = False
+            if stage == "FIELD_VISIT" and r.random() < 0.35:
+                restructured = True
+                self.rows.recoveries.append(
+                    [nid("RC"), case_id, cif, yyyymmdd(self.today - timedelta(days=r.randint(0, 15))),
+                     round(arrears - recovered, 2), "RESTRUCTURE"])
+            elif stage == "RECOVERY_LEGAL":
+                if npf_writeoffs < 2 and r.random() < 0.6:
+                    npf_writeoffs += 1
+                    written_off = True
+                    self.rows.recoveries.append(
+                        [nid("RC"), case_id, cif, yyyymmdd(self.today - timedelta(days=r.randint(0, 10))),
+                         round(arrears - recovered, 2), "WRITEOFF"])
+                    if r.random() < 0.5:  # small post-write-off recovery
+                        self.rows.recoveries.append(
+                            [nid("RC"), case_id, cif, yyyymmdd(self.today - timedelta(days=r.randint(0, 5))),
+                             round(arrears * r.uniform(0.05, 0.2), 2), "WRITEOFF_RECOVERY"])
+                else:
+                    legal = True
+
+            status = ("WRITTEN_OFF" if written_off else "LEGAL" if legal
+                      else "RESTRUCTURED" if restructured
+                      else "RECOVERED" if recovered >= arrears * 0.999
+                      else "PARTIAL_RECOVERY" if recovered > 0
+                      else "PTP_OBTAINED" if ptp_any else "ACTIVE")
+            self.rows.coll_cases.append(
+                [case_id, cif, ln_no, yyyymmdd(open_dt), stage,
+                 r.choice(COLLECTORS), arrears, status])
+
     # -- personas (fixed CIFs) ---------------------------------------------
     def add_personas(self) -> None:
         hnw = "0010000001"
@@ -607,6 +715,8 @@ def write_outputs(out_dir: str, gen: Generator) -> None:
         ("AS400_CAMPAIGN_MAST", gen.rows.campaigns), ("AS400_CAMPAIGN_RESP", gen.rows.campaign_resp),
         ("AS400_FIN_REPAY", gen.rows.fin_repay), ("AS400_XFER_TXN", gen.rows.xfer_txns),
         ("AS400_PROFIT_DIST", gen.rows.profit_dist), ("AS400_TELLER_TXN", gen.rows.teller_txns),
+        ("AS400_COLL_CASE", gen.rows.coll_cases), ("AS400_COLL_ACT", gen.rows.coll_acts),
+        ("AS400_RECOVERY", gen.rows.recoveries),
     ]:
         write_csv(os.path.join(out_dir, f"{name}.csv"), SCHEMAS[name], rows)
 
@@ -641,16 +751,18 @@ def main() -> None:
     prod_rng = random.Random(args.seed + 13)
     fin_rng = random.Random(args.seed + 17)
     txn_rng = random.Random(args.seed + 19)
+    coll_rng = random.Random(args.seed + 23)
     fake = Faker()
     Faker.seed(args.seed)
     today = date.fromisoformat(args.today) if args.today else date.today()
 
-    gen = Generator(fake, rng, today, time_rng, prod_rng, fin_rng, txn_rng)
+    gen = Generator(fake, rng, today, time_rng, prod_rng, fin_rng, txn_rng, coll_rng)
     gen.add_personas()
     gen.add_population(args.customers)
     gen.build_product_holdings()
     gen.build_finance_data()
     gen.build_transaction_data()
+    gen.build_collections_data()
 
     write_outputs(args.out_dir, gen)
     write_corrupt_fixtures(args.corrupt_dir, gen)
@@ -671,6 +783,9 @@ def main() -> None:
     print(f"  AS400_XFER_TXN.csv   {len(gen.rows.xfer_txns):>7} rows")
     print(f"  AS400_PROFIT_DIST.csv {len(gen.rows.profit_dist):>6} rows")
     print(f"  AS400_TELLER_TXN.csv {len(gen.rows.teller_txns):>7} rows")
+    print(f"  AS400_COLL_CASE.csv  {len(gen.rows.coll_cases):>7} rows")
+    print(f"  AS400_COLL_ACT.csv   {len(gen.rows.coll_acts):>7} rows")
+    print(f"  AS400_RECOVERY.csv   {len(gen.rows.recoveries):>7} rows")
     print(f"Corrupt fixtures (TC-1.1 / TC-3.1) in {args.corrupt_dir}")
     print("Personas: 0010000001=HNW_INVESTOR  0010000002=LEVERAGED_BORROWER  0010000003=DIGITAL_SHOPPER")
 

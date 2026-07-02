@@ -1,0 +1,65 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.gold_dataset,
+  description: "Per-case collections & recovery mart: stage, outreach intensity, contact and promise-to-pay performance, cash recovered and recovery rate. Aligned by construction with mart_financing_health (cases derive from the repayment ledger).",
+  assertions: { uniqueKey: ["case_id"] },
+  columns: {
+    case_id: "Collection case (primary key).",
+    customer_id: "Delinquent customer CIF.",
+    loan_id: "Delinquent financing account.",
+    stage: "SOFT_REMINDER / INTENSIVE / FIELD_VISIT / RECOVERY_LEGAL.",
+    case_status: "ACTIVE / PTP_OBTAINED / PARTIAL_RECOVERY / RECOVERED / RESTRUCTURED / LEGAL / WRITTEN_OFF.",
+    collector: "Assigned collector.",
+    open_date: "Case open date.",
+    outstanding: "Arrears under collection.",
+    actions_count: "Outreach actions logged.",
+    last_action_date: "Most recent outreach.",
+    contact_rate: "Share of actions that reached the customer.",
+    ptp_made: "Promises-to-pay obtained.",
+    ptp_kept: "Promises kept.",
+    recovered_amount: "Cash recovered (payments + ta'widh + post-write-off).",
+    recovery_rate: "recovered_amount / outstanding.",
+    is_restructured: "TRUE when resolved via R&R restructuring.",
+    is_written_off: "TRUE when written off."
+  }
+}
+
+WITH acts AS (
+  SELECT case_id,
+    COUNT(*) AS actions_count,
+    MAX(action_date) AS last_action_date,
+    SAFE_DIVIDE(COUNTIF(is_contact), COUNT(*)) AS contact_rate,
+    COUNTIF(is_ptp) AS ptp_made,
+    COUNTIF(ptp_kept) AS ptp_kept
+  FROM ${ref("fct_collection_actions")}
+  GROUP BY 1
+),
+recs AS (
+  SELECT case_id,
+    SUM(IF(is_cash_recovery, amount, 0)) AS recovered_amount,
+    LOGICAL_OR(recovery_type = 'RESTRUCTURE') AS is_restructured,
+    LOGICAL_OR(recovery_type = 'WRITEOFF') AS is_written_off
+  FROM ${ref("fct_recoveries")}
+  GROUP BY 1
+)
+SELECT
+  c.case_id,
+  c.customer_id,
+  c.loan_id,
+  c.stage,
+  c.case_status,
+  c.collector,
+  c.open_date,
+  CAST(c.outstanding AS FLOAT64) AS outstanding,
+  COALESCE(a.actions_count, 0) AS actions_count,
+  a.last_action_date,
+  ROUND(COALESCE(a.contact_rate, 0), 3) AS contact_rate,
+  COALESCE(a.ptp_made, 0) AS ptp_made,
+  COALESCE(a.ptp_kept, 0) AS ptp_kept,
+  CAST(COALESCE(r.recovered_amount, 0) AS FLOAT64) AS recovered_amount,
+  ROUND(SAFE_DIVIDE(COALESCE(r.recovered_amount, 0), NULLIF(c.outstanding, 0)), 3) AS recovery_rate,
+  COALESCE(r.is_restructured, FALSE) AS is_restructured,
+  COALESCE(r.is_written_off, FALSE) AS is_written_off
+FROM ${ref("fct_collection_cases")} c
+LEFT JOIN acts a USING (case_id)
+LEFT JOIN recs r USING (case_id)

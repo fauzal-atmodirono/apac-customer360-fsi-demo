@@ -1,0 +1,25 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.silver_dataset,
+  description: "Recovery events from AS400_RECOVERY — payments, R&R restructuring, ta'widh compensation (capped, non-compounding), write-offs and post-write-off recoveries.",
+  assertions: { uniqueKey: ["recovery_id"], nonNull: ["recovery_id", "case_id", "customer_id"] },
+  columns: {
+    recovery_id: "Unique recovery event ID (primary key).",
+    case_id: "Collection case (FK to fct_collection_cases).",
+    customer_id: "Customer CIF.",
+    recovery_date: "Event date.",
+    amount: "Amount recovered / restructured / compensated / written off.",
+    recovery_type: "PAYMENT / RESTRUCTURE / TAWIDH / WRITEOFF / WRITEOFF_RECOVERY.",
+    is_cash_recovery: "TRUE for actual cash in (PAYMENT, TAWIDH, WRITEOFF_RECOVERY)."
+  }
+}
+
+SELECT
+  TRIM(RECID) AS recovery_id,
+  TRIM(CASEID) AS case_id,
+  TRIM(RC_CIF) AS customer_id,
+  SAFE.PARSE_DATE('%Y%m%d', CAST(REC_DT AS STRING)) AS recovery_date,
+  CAST(REC_AMT AS NUMERIC) AS amount,
+  UPPER(TRIM(REC_TYPE)) AS recovery_type,
+  UPPER(TRIM(REC_TYPE)) IN ('PAYMENT', 'TAWIDH', 'WRITEOFF_RECOVERY') AS is_cash_recovery
+FROM ${ref("AS400_RECOVERY")}
