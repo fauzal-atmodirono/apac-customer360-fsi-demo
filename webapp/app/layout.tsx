@@ -6,10 +6,10 @@ import { SwCleanup } from "@/components/sw-cleanup";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Bank Muamalat Malaysia — Customer 360",
-  description: "Bank Muamalat Malaysia Islamic-banking Customer 360 & hyper-personalization dashboard",
+  title: "Devoteam — Customer 360",
+  description: "Devoteam Customer 360 & hyper-personalization dashboard (Bank Muamalat Islamic-banking demo)",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Muamalat C360" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Devoteam C360" },
   other: { "mobile-web-app-capable": "yes" },
 };
 
