@@ -16,7 +16,7 @@ export default async function SignInPage({
         <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <Landmark className="h-6 w-6" />
         </div>
-        <h1 className="text-xl font-semibold tracking-tight">Bank Muamalat Malaysia</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Devoteam</h1>
         <p className="mt-1 text-sm text-muted-foreground">Customer 360 &amp; Hyper-Personalization</p>
 
         {denied && (
