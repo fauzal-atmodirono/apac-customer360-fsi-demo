@@ -81,3 +81,20 @@ def test_inbound_dedupes_on_message_sid(tmp_path):
     # second call is a dedupe no-op: only one inbound + one outbound reply recorded
     sends = [s for s in adapter.sent]
     assert len(sends) == 1
+
+def test_start_unknown_channel_422(tmp_path):
+    c, _, _ = client(tmp_path)
+    r = c.post("/start", json={"customer_id": "001", "channel": "carrier-pigeon"})
+    assert r.status_code == 422
+
+def test_start_send_failure_records_failed(tmp_path):
+    class FailingAdapter(FakeAdapter):
+        def send(self, channel, to, body, subject=""):
+            raise RuntimeError("twilio 63016")
+    c, store, _ = client(tmp_path, adapter=FailingAdapter())
+    r = c.post("/start", json={"customer_id": "001", "channel": "whatsapp"})
+    assert r.status_code == 200
+    assert "send_error" in r.json()
+    cid = r.json()["conversation_id"]
+    full = store.get_with_messages(cid)
+    assert full["messages"][0]["status"] == "failed"

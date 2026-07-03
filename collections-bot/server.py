@@ -46,9 +46,13 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
         contact = contacts.get(inp.customer_id)
         if not contact:
             return JSONResponse({"error": f"unknown debtor {inp.customer_id}"}, status_code=422)
+        if inp.channel not in ("whatsapp", "sms", "email"):
+            return JSONResponse({"error": f"unknown channel {inp.channel}"}, status_code=422)
         facts = lookup.facts_for(inp.customer_id, contact.name)
         opening = conversation.compose_opening(facts, llm_call=llm_call)
         dest = _dest(contact, inp.channel)
+        if not dest:
+            return JSONResponse({"error": f"debtor {inp.customer_id} has no {inp.channel} destination"}, status_code=422)
         cid = store.create_conversation(
             inp.customer_id, inp.channel, facts.dpd, facts.stage,
             tones.floor_tone(facts.stage), "ms", dest,
