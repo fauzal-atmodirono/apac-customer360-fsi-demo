@@ -4,14 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, MapPin, TrendingDown, Megaphone, LineChart, ShieldCheck, Landmark, Users, Sparkles, Package,
-  Wallet, Send, HandHeart, AlertTriangle, ArrowLeftRight, ClipboardList,
+  Wallet, Send, HandHeart, AlertTriangle, ArrowLeftRight, ClipboardList, MessagesSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_GROUPS = [
   {
     section: "Overview",
-    items: [{ href: "/executive", label: "Executive overview", icon: LayoutDashboard }],
+    items: [
+      { href: "/executive", label: "Executive overview", icon: LayoutDashboard },
+      { href: "/ask", label: "Ask the data", icon: MessagesSquare },
+    ],
   },
   {
     section: "Customer 360",
