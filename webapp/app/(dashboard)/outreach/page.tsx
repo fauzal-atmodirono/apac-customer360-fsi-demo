@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Radio, Send, Loader2, MessageSquare, AlertTriangle } from "lucide-react";
+import { Radio, Loader2, MessageSquare, AlertTriangle } from "lucide-react";
 import { PageHeader } from "@/components/insight";
 import { Card } from "@/components/ui/card";
 
@@ -139,7 +139,7 @@ export default function OutreachPage() {
               </div>
               <div className="flex-1 space-y-3 overflow-y-auto p-4">
                 {conv.messages.map((m, i) => (
-                  <div key={i} className={`flex ${m.direction === "out" ? "" : "justify-end"}`}>
+                  <div key={`${m.ts}-${i}`} className={`flex ${m.direction === "out" ? "" : "justify-end"}`}>
                     <div
                       className={`max-w-[75%] rounded-xl px-3 py-2 text-sm leading-relaxed ${
                         m.direction === "out"
