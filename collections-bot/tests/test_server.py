@@ -1,3 +1,4 @@
+from dataclasses import replace
 from fastapi.testclient import TestClient
 from config import Settings, Contact
 from store import Store
@@ -98,3 +99,28 @@ def test_start_send_failure_records_failed(tmp_path):
     cid = r.json()["conversation_id"]
     full = store.get_with_messages(cid)
     assert full["messages"][0]["status"] == "failed"
+
+def test_protected_routes_require_key_when_set(tmp_path):
+    from server import build_app
+    store = Store(str(tmp_path / "a.sqlite"))
+    s = settings()
+    s = replace(s, bot_api_key="secret")
+    app = build_app(s, CONTACTS, store, FakeAdapter(), FakeLookup(),
+                    llm_call=lambda sy, u: "Salam.")
+    c = TestClient(app)
+    assert c.get("/contacts").status_code == 401
+    assert c.get("/contacts", headers={"X-Bot-Key": "secret"}).status_code == 200
+    assert c.get("/healthz").status_code == 200  # healthz stays open
+
+def test_start_uses_contact_stage_when_bq_misses(tmp_path):
+    class DefaultLookup:
+        def facts_for(self, customer_id, name):
+            return CaseFacts(stage="SOFT_REMINDER", dpd=0, outstanding=0.0, loan_id="", name=name)
+    store = Store(str(tmp_path / "b.sqlite"))
+    contacts = {"001": Contact("001", "Encik Ahmad", "RECOVERY_LEGAL", "whatsapp:+60123", "+60123", "a@b.com")}
+    app = build_app(settings(), contacts, store, FakeAdapter(), DefaultLookup(),
+                    llm_call=lambda sy, u: "Notis.")
+    c = TestClient(app)
+    r = c.post("/start", json={"customer_id": "001", "channel": "whatsapp"})
+    cid = r.json()["conversation_id"]
+    assert store.get_conversation(cid)["stage"] == "RECOVERY_LEGAL"

@@ -22,6 +22,7 @@ class Settings:
     conversation_db_path: str
     public_base_url: str
     verify_twilio_signature: bool
+    bot_api_key: str = ""
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ def load_settings(env: dict | None = None) -> Settings:
         conversation_db_path=g("CONVERSATION_DB_PATH", "./conversations.sqlite"),
         public_base_url=g("PUBLIC_BASE_URL"),
         verify_twilio_signature=g("VERIFY_TWILIO_SIGNATURE", "true").lower() == "true",
+        bot_api_key=g("BOT_API_KEY"),
     )
 
 

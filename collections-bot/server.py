@@ -1,5 +1,6 @@
 """FastAPI app for the collections bot: outbound trigger + inbound webhook + read model."""
-from fastapi import FastAPI, Request, Response
+from dataclasses import replace
+from fastapi import FastAPI, Request, Response, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -15,6 +16,10 @@ class StartIn(BaseModel):
 
 def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
     app = FastAPI(title="Bank Muamalat — Collections bot")
+
+    def _auth(x_bot_key: str | None = Header(default=None)):
+        if settings.bot_api_key and x_bot_key != settings.bot_api_key:
+            raise HTTPException(status_code=401, detail="unauthorized")
 
     def _channels(contact) -> list[str]:
         out = []
@@ -33,7 +38,7 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
     def healthz():
         return {"ok": True}
 
-    @app.get("/contacts")
+    @app.get("/contacts", dependencies=[Depends(_auth)])
     def list_contacts():
         return [
             {"customer_id": c.customer_id, "name": c.name, "dpd_stage": c.dpd_stage,
@@ -41,7 +46,7 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
             for c in contacts.values()
         ]
 
-    @app.post("/start")
+    @app.post("/start", dependencies=[Depends(_auth)])
     def start(inp: StartIn):
         contact = contacts.get(inp.customer_id)
         if not contact:
@@ -49,6 +54,10 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
         if inp.channel not in ("whatsapp", "sms", "email"):
             return JSONResponse({"error": f"unknown channel {inp.channel}"}, status_code=422)
         facts = lookup.facts_for(inp.customer_id, contact.name)
+        # Demo integrity: when BigQuery has no real case row (default fallback has empty
+        # loan_id), trust the contact's configured DPD stage so the badge and the opener tone match.
+        if not facts.loan_id:
+            facts = replace(facts, stage=contact.dpd_stage)
         opening = conversation.compose_opening(facts, llm_call=llm_call)
         dest = _dest(contact, inp.channel)
         if not dest:
@@ -65,11 +74,11 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
         store.add_message(cid, "out", inp.channel, opening, twilio_sid=sid, status=status)
         return {"conversation_id": cid}
 
-    @app.get("/conversations")
+    @app.get("/conversations", dependencies=[Depends(_auth)])
     def conversations():
         return store.list_conversations()
 
-    @app.get("/conversations/{conversation_id}")
+    @app.get("/conversations/{conversation_id}", dependencies=[Depends(_auth)])
     def conversation_detail(conversation_id: str):
         full = store.get_with_messages(conversation_id)
         if not full:
@@ -93,7 +102,7 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
             return Response(content="", media_type="application/xml")
 
         conv = store.latest_open_by_dest(sender)
-        if not conv:
+        if not conv or conv["channel"] != "whatsapp":
             return Response(content="", media_type="application/xml")
 
         store.add_message(conv["id"], "in", "whatsapp", body, twilio_sid=sid, status="received")
@@ -106,8 +115,9 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
             out_sid, out_status = adapter.send("whatsapp", sender, turn.reply)
         except Exception:  # noqa: BLE001
             out_sid, out_status = None, "failed"
+        reply_status = "failed" if out_status == "failed" else ("degraded" if turn.degraded else out_status)
         store.add_message(conv["id"], "out", "whatsapp", turn.reply,
-                          twilio_sid=out_sid, status="degraded" if turn.degraded else out_status)
+                          twilio_sid=out_sid, status=reply_status)
         store.update_conversation(conv["id"], tone=turn.tone, language=turn.language,
                                   detected_intent=turn.intent, outcome=turn.outcome)
         return Response(content="", media_type="application/xml")
