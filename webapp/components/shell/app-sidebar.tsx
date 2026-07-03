@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, MapPin, TrendingDown, Megaphone, LineChart, ShieldCheck, Landmark, Users, Sparkles, Package,
-  Wallet, Send, HandHeart, AlertTriangle, ArrowLeftRight, ClipboardList, MessagesSquare,
+  Wallet, Send, HandHeart, AlertTriangle, ArrowLeftRight, ClipboardList, MessagesSquare, Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +46,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/financing-health", label: "Financing health", icon: AlertTriangle },
       { href: "/collections", label: "Collections & recovery", icon: ClipboardList },
+      { href: "/outreach", label: "Collections outreach", icon: Radio },
       { href: "/churn", label: "Churn risk", icon: TrendingDown },
     ],
   },
