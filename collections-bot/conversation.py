@@ -103,8 +103,8 @@ def next_turn(*, stage: str, current_language: str, history: list, inbound_text:
             tone=tones.resolve_tone(stage, intent), outcome=tones.outcome_for(intent),
             degraded=False,
         )
-    except (LLMError, ValueError):
+    except (LLMError, ValueError, AttributeError, TypeError):
         return Turn(
             reply=tones.CANNED_REPLY[stage], intent="OTHER", language=current_language,
-            tone=tones.floor_tone(stage), outcome="OPENED", degraded=True,
+            tone=tones.floor_tone(stage), outcome=tones.outcome_for("OTHER"), degraded=True,
         )

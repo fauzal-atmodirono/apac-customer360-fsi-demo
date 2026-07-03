@@ -1,6 +1,5 @@
-import pytest
 from conversation import (
-    CaseFacts, compose_opening, next_turn, build_opening_prompt,
+    CaseFacts, compose_opening, next_turn, build_opening_prompt, build_reply_prompt,
 )
 from llm import LLMError
 
@@ -51,3 +50,14 @@ def test_next_turn_falls_back_on_bad_output():
     assert turn.degraded is True
     assert turn.intent == "OTHER"
     assert turn.reply == __import__("tones").CANNED_REPLY["RECOVERY_LEGAL"]
+
+def test_compose_opening_falls_back_on_empty_response():
+    out = compose_opening(FACTS, llm_call=lambda s, u: "")
+    assert "Bank Muamalat" in out
+
+def test_build_reply_prompt_carries_stage_and_rules():
+    system, user = build_reply_prompt("INTENSIVE", "ms", [], "saya susah")
+    assert "INTENSIVE" in system
+    assert "FIRM" in system
+    assert "Rekonstruksi" in system
+    assert "saya susah" in user
