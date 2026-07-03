@@ -13,7 +13,7 @@ const NAV_GROUPS = [
     section: "Overview",
     items: [
       { href: "/executive", label: "Executive overview", icon: LayoutDashboard },
-      { href: "/ask", label: "Ask the data", icon: MessagesSquare },
+      { href: "/ask", label: "Ask Collections", icon: MessagesSquare },
     ],
   },
   {
