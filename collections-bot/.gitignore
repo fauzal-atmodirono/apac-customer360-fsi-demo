@@ -1,0 +1,6 @@
+.env
+demo-contacts.json
+*.sqlite
+__pycache__/
+.pytest_cache/
+.venv/
