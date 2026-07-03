@@ -1,0 +1,49 @@
+import pytest
+from config import Settings
+from twilio_adapter import TwilioAdapter, SendError
+
+def settings():
+    return Settings(
+        twilio_account_sid="AC", twilio_auth_token="tok", sms_from="+1999",
+        whatsapp_from="whatsapp:+1888", sendgrid_api_key="SG", email_from="a@b.com",
+        email_from_name="Bank", google_api_key="", gemini_model="m", gcp_project="p",
+        bq_location="loc", gold_dataset="g", bot_port=8100, conversation_db_path=":memory:",
+        public_base_url="https://t.app", verify_twilio_signature=True,
+    )
+
+class FakeMsg:
+    def __init__(self): self.sent = []
+    def create(self, from_, to, body):
+        self.sent.append({"from": from_, "to": to, "body": body})
+        class R: sid, status = "SM1", "queued"
+        return R()
+
+def test_send_whatsapp_prefixes_and_uses_whatsapp_from():
+    msgs = FakeMsg()
+    a = TwilioAdapter(settings(), messages_client=msgs)
+    sid, status = a.send("whatsapp", "whatsapp:+60123", "Salam")
+    assert sid == "SM1"
+    assert msgs.sent[0]["from"] == "whatsapp:+1888"
+    assert msgs.sent[0]["to"] == "whatsapp:+60123"
+
+def test_send_sms_uses_sms_from():
+    msgs = FakeMsg()
+    a = TwilioAdapter(settings(), messages_client=msgs)
+    a.send("sms", "+60123", "hi")
+    assert msgs.sent[0]["from"] == "+1999"
+    assert msgs.sent[0]["to"] == "+60123"
+
+def test_send_failure_raises_senderror():
+    class Boom:
+        def create(self, **k): raise RuntimeError("twilio 63016")
+    a = TwilioAdapter(settings(), messages_client=Boom())
+    with pytest.raises(SendError) as e:
+        a.send("whatsapp", "whatsapp:+60", "x")
+    assert "63016" in str(e.value)
+
+def test_verify_delegates_to_validator():
+    class V:
+        def validate(self, url, params, sig): return sig == "good"
+    a = TwilioAdapter(settings(), validator=V())
+    assert a.verify("https://t.app/twilio/inbound", {"Body": "x"}, "good") is True
+    assert a.verify("https://t.app/twilio/inbound", {"Body": "x"}, "bad") is False
