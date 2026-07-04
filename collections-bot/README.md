@@ -22,6 +22,12 @@ in `.env` and set `GOOGLE_CLOUD_LOCATION` (default `global`). **Email** sends ov
 ## Run (local)
 
 ```bash
+./run.sh        # sets up the venv, sanity-checks .env, prints the ngrok/Twilio steps, starts the bot
+```
+
+Or start it directly:
+
+```bash
 ./.venv/bin/uvicorn server:get_app --factory --host 0.0.0.0 --port 8100
 ```
 
