@@ -5,7 +5,7 @@ from twilio_adapter import TwilioAdapter, SendError
 def settings():
     return Settings(
         twilio_account_sid="AC", twilio_auth_token="tok", sms_from="+1999",
-        whatsapp_from="whatsapp:+1888", sendgrid_api_key="SG", email_from="a@b.com",
+        whatsapp_from="whatsapp:+1888", email_from="a@b.com",
         email_from_name="Bank", google_api_key="", gemini_model="m", gcp_project="p",
         bq_location="loc", gold_dataset="g", bot_port=8100, conversation_db_path=":memory:",
         public_base_url="https://t.app", verify_twilio_signature=True,
@@ -47,3 +47,12 @@ def test_verify_delegates_to_validator():
     a = TwilioAdapter(settings(), validator=V())
     assert a.verify("https://t.app/twilio/inbound", {"Body": "x"}, "good") is True
     assert a.verify("https://t.app/twilio/inbound", {"Body": "x"}, "bad") is False
+
+def test_send_email_uses_smtp_sender():
+    sent = []
+    a = TwilioAdapter(settings(), smtp_sender=lambda msg: sent.append(msg))
+    sid, status = a.send("email", "user@example.com", "Body text", subject="Notis")
+    assert (sid, status) == ("email", "sent")
+    assert sent[0]["To"] == "user@example.com"
+    assert sent[0]["Subject"] == "Notis"
+    assert "Body text" in sent[0].get_content()

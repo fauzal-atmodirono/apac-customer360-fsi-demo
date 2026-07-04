@@ -4,7 +4,7 @@ from case_lookup import CaseLookup, build_sql
 def settings():
     return Settings(
         twilio_account_sid="", twilio_auth_token="", sms_from="", whatsapp_from="",
-        sendgrid_api_key="", email_from="", email_from_name="", google_api_key="",
+        email_from="", email_from_name="", google_api_key="",
         gemini_model="m", gcp_project="proj", bq_location="loc", gold_dataset="gold",
         bot_port=8100, conversation_db_path=":memory:", public_base_url="", verify_twilio_signature=True,
     )

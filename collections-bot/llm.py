@@ -23,16 +23,20 @@ def parse_json_block(text: str) -> dict:
 
 
 class Gemini:
-    def __init__(self, model: str, api_key: str = ""):
+    def __init__(self, model: str, api_key: str = "", project: str = "", location: str = "global"):
         self._model = model
         self._api_key = api_key
+        self._project = project
+        self._location = location
         self._client = None
 
     def _ensure_client(self):
         if self._client is None:
-            from google import genai  # imported lazily so tests need no SDK/creds
-            # api_key set -> Gemini Developer API; empty -> Vertex via ADC/env.
-            self._client = genai.Client(api_key=self._api_key) if self._api_key else genai.Client()
+            from google import genai  # lazy so tests need no SDK/creds
+            if self._api_key:
+                self._client = genai.Client(api_key=self._api_key)
+            else:
+                self._client = genai.Client(vertexai=True, project=self._project, location=self._location)
         return self._client
 
     def generate(self, system: str, user: str) -> str:

@@ -8,7 +8,7 @@ from server import build_app
 def settings():
     return Settings(
         twilio_account_sid="AC", twilio_auth_token="tok", sms_from="+1999",
-        whatsapp_from="whatsapp:+1888", sendgrid_api_key="SG", email_from="a@b.com",
+        whatsapp_from="whatsapp:+1888", email_from="a@b.com",
         email_from_name="Bank", google_api_key="", gemini_model="m", gcp_project="p",
         bq_location="loc", gold_dataset="g", bot_port=8100, conversation_db_path=":memory:",
         public_base_url="https://t.app", verify_twilio_signature=False,

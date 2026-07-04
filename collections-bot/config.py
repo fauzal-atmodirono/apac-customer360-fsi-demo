@@ -10,7 +10,6 @@ class Settings:
     twilio_auth_token: str
     sms_from: str
     whatsapp_from: str
-    sendgrid_api_key: str
     email_from: str
     email_from_name: str
     google_api_key: str
@@ -22,6 +21,12 @@ class Settings:
     conversation_db_path: str
     public_base_url: str
     verify_twilio_signature: bool
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+    vertex_location: str = "global"
     bot_api_key: str = ""
 
 
@@ -44,7 +49,6 @@ def load_settings(env: dict | None = None) -> Settings:
         twilio_auth_token=g("TWILIO_AUTH_TOKEN"),
         sms_from=g("TWILIO_SMS_FROM"),
         whatsapp_from=g("TWILIO_WHATSAPP_FROM"),
-        sendgrid_api_key=g("SENDGRID_API_KEY"),
         email_from=g("EMAIL_FROM"),
         email_from_name=g("EMAIL_FROM_NAME", "Collections"),
         google_api_key=g("GOOGLE_API_KEY"),
@@ -56,6 +60,12 @@ def load_settings(env: dict | None = None) -> Settings:
         conversation_db_path=g("CONVERSATION_DB_PATH", "./conversations.sqlite"),
         public_base_url=g("PUBLIC_BASE_URL"),
         verify_twilio_signature=g("VERIFY_TWILIO_SIGNATURE", "true").lower() == "true",
+        smtp_host=g("SMTP_HOST"),
+        smtp_port=int(g("SMTP_PORT", "587")),
+        smtp_user=g("SMTP_USER"),
+        smtp_password=g("SMTP_PASSWORD"),
+        smtp_starttls=g("SMTP_STARTTLS", "true").lower() == "true",
+        vertex_location=g("GOOGLE_CLOUD_LOCATION", "global"),
         bot_api_key=g("BOT_API_KEY"),
     )
 

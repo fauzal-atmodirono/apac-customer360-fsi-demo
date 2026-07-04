@@ -1,4 +1,4 @@
-"""Twilio (WhatsApp/SMS) + SendGrid (Email) send and inbound signature verify."""
+"""Twilio (WhatsApp/SMS) + SMTP (Email) send and inbound signature verify."""
 
 
 class SendError(Exception):
@@ -6,10 +6,10 @@ class SendError(Exception):
 
 
 class TwilioAdapter:
-    def __init__(self, settings, messages_client=None, email_client=None, validator=None):
+    def __init__(self, settings, messages_client=None, smtp_sender=None, validator=None):
         self._s = settings
         self._messages = messages_client
-        self._email = email_client
+        self._smtp_sender = smtp_sender
         self._validator = validator
 
     # -- lazy real clients (skipped when tests inject fakes) --------------
@@ -18,12 +18,6 @@ class TwilioAdapter:
             from twilio.rest import Client
             self._messages = Client(self._s.twilio_account_sid, self._s.twilio_auth_token).messages
         return self._messages
-
-    def _email_client(self):
-        if self._email is None:
-            from sendgrid import SendGridAPIClient
-            self._email = SendGridAPIClient(self._s.sendgrid_api_key)
-        return self._email
 
     def _request_validator(self):
         if self._validator is None:
@@ -50,16 +44,26 @@ class TwilioAdapter:
 
     def _send_email(self, to: str, subject: str, body: str) -> tuple[str, str]:
         try:
-            from sendgrid.helpers.mail import Mail
-            mail = Mail(
-                from_email=(self._s.email_from, self._s.email_from_name),
-                to_emails=to, subject=subject, plain_text_content=body,
-            )
-            resp = self._email_client().send(mail)
-            return (resp.headers.get("X-Message-Id", "email") if hasattr(resp, "headers") else "email",
-                    str(getattr(resp, "status_code", "sent")))
+            from email.message import EmailMessage
+            msg = EmailMessage()
+            msg["From"] = f"{self._s.email_from_name} <{self._s.email_from}>"
+            msg["To"] = to
+            msg["Subject"] = subject
+            msg.set_content(body)
+            sender = self._smtp_sender or self._default_smtp_send
+            sender(msg)
+            return ("email", "sent")
         except Exception as e:  # noqa: BLE001
             raise SendError(str(e)) from e
+
+    def _default_smtp_send(self, msg) -> None:
+        import smtplib  # lazy stdlib
+        with smtplib.SMTP(self._s.smtp_host, self._s.smtp_port) as server:
+            if self._s.smtp_starttls:
+                server.starttls()
+            if self._s.smtp_user:
+                server.login(self._s.smtp_user, self._s.smtp_password)
+            server.send_message(msg)
 
     def verify(self, url: str, params: dict, signature: str) -> bool:
         return bool(self._request_validator().validate(url, params, signature))

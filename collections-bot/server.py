@@ -137,7 +137,7 @@ def _build_default_app() -> FastAPI:
     store = Store(settings.conversation_db_path)
     adapter = TwilioAdapter(settings)
     lookup = CaseLookup(settings)
-    gemini = Gemini(settings.gemini_model, settings.google_api_key)
+    gemini = Gemini(settings.gemini_model, settings.google_api_key, settings.gcp_project, settings.vertex_location)
     return build_app(settings, contacts, store, adapter, lookup, gemini.generate)
 
 
