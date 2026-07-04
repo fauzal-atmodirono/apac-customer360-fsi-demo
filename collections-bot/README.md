@@ -142,6 +142,31 @@ No composite indexes are needed — the store uses equality filters only and sor
 - Secrets go in as plain env vars for the demo; move to Secret Manager for real use
   (see the note printed by `deploy.sh`).
 
+## Wire the webapp (dashboard trigger button)
+
+The demo triggers outreach from the **Outreach** page in the webapp — the same flow as
+`smoke.sh`, but as a button: pick a channel, click a debtor, watch the transcript live.
+No terminal needed. The browser calls a same-origin webapp route which injects `X-Bot-Key`
+server-side, so the bot key never reaches the client.
+
+The webapp reads two env vars (`webapp/.env.example`): point them at the deployed bot with
+the **same** `BOT_API_KEY` the bot uses:
+
+```bash
+# local: webapp/.env.local
+BOT_URL=http://localhost:8100
+BOT_API_KEY=<same as collections-bot/.env>
+
+# Cloud Run: deploy the bot first, then the webapp wired to it
+cd collections-bot && ./deploy.sh          # prints the bot's https URL
+cd ../webapp && BOT_URL=https://c360-collections-bot-xxxx.a.run.app ./deploy.sh
+```
+
+`webapp/deploy.sh` runs the dashboard **private** (`--no-allow-unauthenticated`, since auth is
+bypassed via `DISABLE_AUTH=true`) and refuses to deploy if `BOT_URL` still points at localhost.
+Reach the private service with `gcloud run services proxy c360-webapp …`. `smoke.sh` /
+`SMOKE_BASE` remains as a terminal fallback.
+
 ## Troubleshooting
 
 - **WhatsApp not delivered (Twilio 63015/63016):** recipient hasn't joined the sandbox.
