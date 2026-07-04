@@ -11,6 +11,9 @@ class TwilioAdapter:
         self._messages = messages_client
         self._smtp_sender = smtp_sender
         self._validator = validator
+        # Channels to fake (record as 'simulated', no real send) — e.g. SMS that
+        # can't route to the demo region. WhatsApp/email stay real unless listed.
+        self._simulate = {c.strip().lower() for c in getattr(settings, "simulate_channels", "").split(",") if c.strip()}
 
     # -- lazy real clients (skipped when tests inject fakes) --------------
     def _messages_client(self):
@@ -27,6 +30,8 @@ class TwilioAdapter:
 
     # -- public API -------------------------------------------------------
     def send(self, channel: str, to: str, body: str, subject: str = "") -> tuple[str, str]:
+        if channel in self._simulate:
+            return ("simulated", "simulated")
         if channel == "whatsapp":
             return self._send_message(self._s.whatsapp_from, to, body)
         if channel == "sms":

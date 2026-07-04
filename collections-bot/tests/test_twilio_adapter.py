@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 from config import Settings
 from twilio_adapter import TwilioAdapter, SendError
@@ -56,3 +58,14 @@ def test_send_email_uses_smtp_sender():
     assert sent[0]["To"] == "user@example.com"
     assert sent[0]["Subject"] == "Notis"
     assert "Body text" in sent[0].get_content()
+
+def test_simulated_channel_skips_real_send():
+    class Boom:
+        def create(self, **k): raise AssertionError("real send must not happen for a simulated channel")
+    a = TwilioAdapter(replace(settings(), simulate_channels="sms"), messages_client=Boom())
+    assert a.send("sms", "+60123", "hi") == ("simulated", "simulated")
+    # non-simulated channels still send for real
+    msgs = FakeMsg()
+    b = TwilioAdapter(replace(settings(), simulate_channels="sms"), messages_client=msgs)
+    b.send("whatsapp", "whatsapp:+60123", "Salam")
+    assert msgs.sent[0]["to"] == "whatsapp:+60123"

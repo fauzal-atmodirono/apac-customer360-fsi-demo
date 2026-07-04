@@ -64,8 +64,16 @@ cid = (resp or {}).get("conversation_id")
 if not cid:
     print("✗ no conversation_id returned."); sys.exit(1)
 if (resp or {}).get("send_error"):
-    print(f"  ⚠ send_error: {resp['send_error']}")
-    print("    (WhatsApp 63015/63016 = recipient hasn't sent 'join <code>' to the sandbox yet.)")
+    import re as _re
+    err = _re.sub(r"\x1b\[[0-9;]*m", "", str(resp["send_error"])).strip()
+    print(f"  ⚠ send_error: {err}")
+    hints = {
+        "whatsapp": "63015/63016 = recipient hasn't sent 'join <code>' to the sandbox yet.",
+        "sms": "21612 = carrier can't route this From→To (e.g. +62 from a US long code). Set SIMULATE_CHANNELS=sms in .env.",
+        "email": "535 BadCredentials = wrong SMTP creds — Gmail needs an App Password (not the login password).",
+    }
+    if chan in hints:
+        print(f"    ({hints[chan]})")
 
 print(f"→ conversation {cid} — polling ~10s (reply on the handset to watch the bot adapt)…")
 for _ in range(5):

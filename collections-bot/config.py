@@ -28,6 +28,7 @@ class Settings:
     smtp_starttls: bool = True
     vertex_location: str = "global"
     bot_api_key: str = ""
+    simulate_channels: str = ""
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ def load_settings(env: dict | None = None) -> Settings:
         smtp_starttls=g("SMTP_STARTTLS", "true").lower() == "true",
         vertex_location=g("GOOGLE_CLOUD_LOCATION", "global"),
         bot_api_key=g("BOT_API_KEY"),
+        simulate_channels=g("SIMULATE_CHANNELS"),
     )
 
 
