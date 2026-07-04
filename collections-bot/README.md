@@ -104,10 +104,39 @@ SMOKE_BASE=https://<service-url> ./smoke.sh 0019286954 whatsapp
   **Vertex AI User** (`roles/aiplatform.user`, Gemini ADC) and **BigQuery Job User +
   Data Viewer** on the gold dataset.
 
+### Conversation store: SQLite vs Firestore
+
+The bot keeps conversations + messages in a pluggable store, chosen by `STORE_BACKEND`:
+
+- **`sqlite`** (default) — a single file in the container. Simple, zero setup, but ephemeral
+  and single-writer, so the Cloud Run deploy must pin **one warm instance** (`min=max=1`) or
+  `/start` and the inbound webhook could land on different instances with different state.
+- **`firestore`** — serverless and concurrency-safe, so `deploy.sh` lets the service **scale
+  0→4** instead of pinning one. The database may live in a **different GCP project** than the
+  bot; the client is pointed explicitly via env vars.
+
+For this demo the Firestore DB is `customer360-db` (Native mode, `asia-southeast2`) in project
+**`lv-playground-genai`** — separate from where BigQuery/gold data lives (`nbs-…`). Enable it:
+
+```bash
+# .env
+STORE_BACKEND=firestore
+FIRESTORE_PROJECT=lv-playground-genai
+FIRESTORE_DATABASE=customer360-db
+
+# grant the bot's RUNTIME service account Firestore access ON the DB's project:
+gcloud projects add-iam-policy-binding lv-playground-genai \
+  --member="serviceAccount:<runtime-sa>@<bot-project>.iam.gserviceaccount.com" \
+  --role="roles/datastore.user"
+```
+
+No composite indexes are needed — the store uses equality filters only and sorts in memory
+(fine at demo volumes). Collections created: `conversations`, `messages`.
+
 **Caveats**
-- **SQLite is ephemeral + single-instance.** State lives in the container filesystem, so
-  the deploy pins one warm instance (`min=max=1`) — required so `/start` and the inbound
-  webhook hit the same instance. Beyond a demo, move state to Firestore.
+- **SQLite is ephemeral + single-instance.** With `STORE_BACKEND=sqlite`, state lives in the
+  container filesystem, so the deploy pins one warm instance (`min=max=1`). Switch to
+  `STORE_BACKEND=firestore` (above) to scale past one instance.
 - `demo-contacts.json` is baked into the image (it's excluded from git but kept for the
   build). For production, mount it from Secret Manager / GCS instead.
 - Secrets go in as plain env vars for the demo; move to Secret Manager for real use

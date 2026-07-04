@@ -29,6 +29,9 @@ class Settings:
     vertex_location: str = "global"
     bot_api_key: str = ""
     simulate_channels: str = ""
+    store_backend: str = "sqlite"
+    firestore_project: str = ""
+    firestore_database: str = "(default)"
 
 
 @dataclass(frozen=True)
@@ -69,6 +72,9 @@ def load_settings(env: dict | None = None) -> Settings:
         vertex_location=g("GOOGLE_CLOUD_LOCATION", "global"),
         bot_api_key=g("BOT_API_KEY"),
         simulate_channels=g("SIMULATE_CHANNELS"),
+        store_backend=g("STORE_BACKEND", "sqlite").lower(),
+        firestore_project=g("FIRESTORE_PROJECT"),
+        firestore_database=g("FIRESTORE_DATABASE", "(default)"),
     )
 
 

@@ -25,7 +25,8 @@ RUNTIME_SA="${RUNTIME_SA:-}"    # empty = default compute service account
 KEYS="TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_SMS_FROM TWILIO_WHATSAPP_FROM
 SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD SMTP_STARTTLS EMAIL_FROM EMAIL_FROM_NAME
 GEMINI_MODEL GOOGLE_CLOUD_LOCATION GCP_PROJECT BQ_LOCATION GOLD_DATASET
-VERIFY_TWILIO_SIGNATURE BOT_API_KEY SIMULATE_CHANNELS"
+VERIFY_TWILIO_SIGNATURE BOT_API_KEY SIMULATE_CHANNELS
+STORE_BACKEND FIRESTORE_PROJECT FIRESTORE_DATABASE"
 ENVSTR=""
 for k in $KEYS; do
   ENVSTR="${ENVSTR}${ENVSTR:+@@}${k}=$(getenv "$k")"
@@ -33,13 +34,21 @@ done
 
 SA_FLAG=""; [ -n "$RUNTIME_SA" ] && SA_FLAG="--service-account=${RUNTIME_SA}"
 
-echo "→ deploying ${SERVICE} → ${PROJECT}/${REGION} (single warm instance)…"
+# SQLite state lives in the container, so it MUST pin one warm instance. Firestore
+# is external + concurrency-safe, so let the service scale (and cost nothing idle).
+if [ "$(getenv STORE_BACKEND)" = "firestore" ]; then
+  INSTANCES="--min-instances 0 --max-instances 4"; STATE_NOTE="firestore state — scales 0→4"
+else
+  INSTANCES="--min-instances 1 --max-instances 1"; STATE_NOTE="sqlite state — single warm instance"
+fi
+
+echo "→ deploying ${SERVICE} → ${PROJECT}/${REGION} (${STATE_NOTE})…"
 gcloud run deploy "$SERVICE" \
   --source . \
   --project "$PROJECT" \
   --region "$REGION" \
   --allow-unauthenticated \
-  --min-instances 1 --max-instances 1 \
+  ${INSTANCES} \
   --memory 512Mi \
   --set-env-vars "^@@^${ENVSTR}" \
   ${SA_FLAG}

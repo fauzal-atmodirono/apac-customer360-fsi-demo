@@ -134,11 +134,15 @@ def _build_default_app() -> FastAPI:
     load_dotenv()
     settings = load_settings()
     contacts = load_contacts("demo-contacts.json")
-    from store import Store
     from twilio_adapter import TwilioAdapter
     from case_lookup import CaseLookup
     from llm import Gemini
-    store = Store(settings.conversation_db_path)
+    if settings.store_backend == "firestore":
+        from firestore_store import FirestoreStore
+        store = FirestoreStore(settings.firestore_project, settings.firestore_database)
+    else:
+        from store import Store
+        store = Store(settings.conversation_db_path)
     adapter = TwilioAdapter(settings)
     lookup = CaseLookup(settings)
     gemini = Gemini(settings.gemini_model, settings.google_api_key, settings.gcp_project, settings.vertex_location)
