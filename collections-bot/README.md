@@ -45,6 +45,20 @@ The purchased number sends SMS immediately, but WhatsApp requires the **Sandbox*
 number is registered with Meta (won't clear for the demo). Each team WhatsApp number must send
 `join <sandbox-code>` to the sandbox number once before it can receive messages.
 
+## Smoke test (real send)
+
+With the bot running, fire one real outbound message and watch the transcript:
+
+```bash
+./smoke.sh                       # list demo debtors (CIF / stage / channels)
+./smoke.sh 0010000042 whatsapp   # send the DPD-toned opener, then poll ~10s
+```
+
+It calls `/start` directly (with the `X-Bot-Key` header), reports the send status, and
+surfaces common failures (401 = key mismatch, 422 = unknown CIF/channel, WhatsApp
+63015/63016 = recipient hasn't joined the sandbox). Reply on the handset during the poll
+window to see the tone adapt. For the full back-and-forth, use the dashboard.
+
 ## Tests
 
 ```bash
