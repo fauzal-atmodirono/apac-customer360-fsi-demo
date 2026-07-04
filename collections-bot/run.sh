@@ -49,10 +49,10 @@ cat <<EOF
 ────────────────────────────────────────────────────────────
  Collections bot → http://localhost:${PORT}
 
- 2nd terminal — expose the inbound webhook:
-     ngrok http ${PORT}
+ 2nd terminal — expose the inbound webhook (Cloudflare Tunnel):
+     cloudflared tunnel --url http://localhost:${PORT}
 
- With the ngrok https URL:
+ With the https URL it prints (…trycloudflare.com):
    1. .env →  PUBLIC_BASE_URL=<url>          (then restart this script)
    2. Twilio Console → Messaging → Try it out → WhatsApp sandbox →
       "When a message comes in":  <url>/twilio/inbound   (HTTP POST)

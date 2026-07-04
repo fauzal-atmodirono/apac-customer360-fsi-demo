@@ -31,12 +31,13 @@ Or start it directly:
 ./.venv/bin/uvicorn server:get_app --factory --host 0.0.0.0 --port 8100
 ```
 
-Expose the inbound webhook with a tunnel and point Twilio at it:
+Expose the inbound webhook with a tunnel and point Twilio at it (Cloudflare Tunnel;
+`ngrok http 8100` works the same way):
 
 ```bash
-ngrok http 8100
-# copy the https URL into .env as PUBLIC_BASE_URL, then in the Twilio WhatsApp Sandbox
-# set "When a message comes in" -> https://<ngrok>/twilio/inbound  (HTTP POST)
+cloudflared tunnel --url http://localhost:8100
+# copy the printed https URL (…trycloudflare.com) into .env as PUBLIC_BASE_URL, then in the
+# Twilio WhatsApp Sandbox set "When a message comes in" -> https://<url>/twilio/inbound  (HTTP POST)
 ```
 
 ## Twilio WhatsApp Sandbox
@@ -80,5 +81,6 @@ cd collections-bot && python -m pytest -v
 - **WhatsApp not delivered (Twilio 63015/63016):** recipient hasn't joined the sandbox.
 - **Inbound 403:** `PUBLIC_BASE_URL` doesn't match the Twilio webhook URL. Set
   `VERIFY_TWILIO_SIGNATURE=false` temporarily to unblock local wiring, then fix the URL.
-- **ngrok restarted:** re-paste the new URL into both `.env` (`PUBLIC_BASE_URL`) and the Twilio
-  sandbox webhook (30-second fix).
+- **tunnel restarted (new URL):** a quick Cloudflare/ngrok tunnel mints a fresh URL each run —
+  re-paste it into both `.env` (`PUBLIC_BASE_URL`) and the Twilio sandbox webhook (30-second fix).
+  A named `cloudflared` tunnel keeps a stable hostname if you want to avoid this.
