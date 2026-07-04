@@ -14,7 +14,7 @@ PY="$([ -x .venv/bin/python ] && echo ./.venv/bin/python || echo python3)"
 exec "$PY" - "$@" <<'PYEOF'
 import json, os, sys, time, urllib.request, urllib.error
 
-BASE = f"http://localhost:{os.environ.get('SMOKE_PORT', '8100')}"
+BASE = os.environ.get("SMOKE_BASE", "").rstrip("/") or f"http://localhost:{os.environ.get('SMOKE_PORT', '8100')}"
 KEY  = os.environ.get("SMOKE_KEY", "")
 HEAD = {"X-Bot-Key": KEY} if KEY else {}
 

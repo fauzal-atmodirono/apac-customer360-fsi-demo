@@ -1,0 +1,12 @@
+# Controls what `gcloud run deploy --source .` uploads to Cloud Build.
+# NOTE: this file REPLACES .gitignore's rules for uploads, so we must explicitly
+# exclude .env here (secrets) while KEEPING demo-contacts.json (baked into image).
+.git/
+.venv/
+.env
+*.sqlite
+__pycache__/
+.pytest_cache/
+tests/
+email-preview-*.html
+.superpowers/

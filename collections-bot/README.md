@@ -76,6 +76,43 @@ cd collections-bot && python -m pytest -v
 6. Trigger a **RECOVERY_LEGAL** debtor → confirm the legal-notice tone.
 7. Fire SMS + Email sends → confirm they appear as sent (dummy SMS number is fine).
 
+## Deploy to Cloud Run
+
+Cloud Run gives a stable public HTTPS URL — no tunnel needed. The service is public so
+Twilio can reach `/twilio/inbound`, but `/start` & `/conversations` stay gated by
+`BOT_API_KEY` and the webhook by the Twilio signature.
+
+```bash
+./deploy.sh            # reads config from .env; PROJECT/REGION overridable via env
+```
+
+The script deploys from source (uses the `Dockerfile`), runs a **single warm instance**
+(`--min/--max-instances 1`), sets the env vars from `.env`, then sets `PUBLIC_BASE_URL`
+to the deployed URL and prints the Twilio + smoke-test steps.
+
+**Test the deployed bot** (same script, remote base):
+
+```bash
+SMOKE_BASE=https://<service-url> ./smoke.sh 0019286954 whatsapp
+```
+
+**Prerequisites / IAM**
+- Deployer roles: Cloud Run Admin, Cloud Build Admin, Artifact Registry Admin,
+  **Service Account User** (to run-as the SA), and permission to enable the
+  `run`, `cloudbuild`, `artifactregistry`, `aiplatform` APIs.
+- Runtime service account (default compute SA unless `RUNTIME_SA=` is set) needs
+  **Vertex AI User** (`roles/aiplatform.user`, Gemini ADC) and **BigQuery Job User +
+  Data Viewer** on the gold dataset.
+
+**Caveats**
+- **SQLite is ephemeral + single-instance.** State lives in the container filesystem, so
+  the deploy pins one warm instance (`min=max=1`) — required so `/start` and the inbound
+  webhook hit the same instance. Beyond a demo, move state to Firestore.
+- `demo-contacts.json` is baked into the image (it's excluded from git but kept for the
+  build). For production, mount it from Secret Manager / GCS instead.
+- Secrets go in as plain env vars for the demo; move to Secret Manager for real use
+  (see the note printed by `deploy.sh`).
+
 ## Troubleshooting
 
 - **WhatsApp not delivered (Twilio 63015/63016):** recipient hasn't joined the sandbox.
