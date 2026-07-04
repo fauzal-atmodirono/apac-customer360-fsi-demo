@@ -32,6 +32,14 @@ fi
 
 PORT="$(getenv BOT_PORT)"; PORT="${PORT:-8100}"
 
+# --- free the port: kill any stale bot so we don't keep serving old code/.env
+STALE="$(lsof -nP -ti tcp:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+if [ -n "$STALE" ]; then
+  echo "→ stopping stale bot on :$PORT (pid $STALE)…"
+  kill $STALE 2>/dev/null || true
+  sleep 1
+fi
+
 # --- config sanity (warn, don't block) ---------------------------------------
 echo "→ config check:"
 [ -n "$(getenv TWILIO_AUTH_TOKEN)" ]    || warn "TWILIO_AUTH_TOKEN empty (needed to verify inbound signatures)"
