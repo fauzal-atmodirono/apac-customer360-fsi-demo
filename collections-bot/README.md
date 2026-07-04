@@ -10,9 +10,14 @@ Gemini; reads case facts from BigQuery (read-only). See the design spec in
 ```bash
 cd collections-bot
 python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-cp .env.example .env                     # fill in Twilio/SendGrid/Gemini values
+cp .env.example .env                     # fill in Twilio + SMTP creds (Gemini uses ADC)
 cp demo-contacts.example.json demo-contacts.json   # set real WhatsApp numbers
+gcloud auth application-default login    # Gemini runs on Vertex AI ADC — no API key
 ```
+
+**Gemini** uses Vertex AI via Application Default Credentials — leave `GOOGLE_API_KEY` empty
+in `.env` and set `GOOGLE_CLOUD_LOCATION` (default `global`). **Email** sends over plain SMTP
+(`SMTP_HOST/PORT/USER/PASSWORD`, e.g. Gmail SMTP + an app password) — send-only, no inbox needed.
 
 ## Run (local)
 
