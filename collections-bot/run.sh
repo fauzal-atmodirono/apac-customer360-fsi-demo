@@ -23,6 +23,13 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
+# demo-contacts.json is required — the bot cannot boot without it.
+if [ ! -f demo-contacts.json ]; then
+  echo "✗ demo-contacts.json missing — the bot can't start without it:"
+  echo "    cp demo-contacts.example.json demo-contacts.json   # then edit real WhatsApp numbers"
+  exit 1
+fi
+
 PORT="$(getenv BOT_PORT)"; PORT="${PORT:-8100}"
 
 # --- config sanity (warn, don't block) ---------------------------------------
@@ -30,7 +37,6 @@ echo "→ config check:"
 [ -n "$(getenv TWILIO_AUTH_TOKEN)" ]    || warn "TWILIO_AUTH_TOKEN empty (needed to verify inbound signatures)"
 [ -n "$(getenv TWILIO_WHATSAPP_FROM)" ] || warn "TWILIO_WHATSAPP_FROM empty"
 [ -n "$(getenv BOT_API_KEY)" ]          || warn "BOT_API_KEY empty — /start & /conversations are UNAUTHENTICATED on the tunnel"
-[ -f demo-contacts.json ]               || warn "demo-contacts.json missing — cp demo-contacts.example.json demo-contacts.json"
 [ -n "$(getenv PUBLIC_BASE_URL)" ]      || warn "PUBLIC_BASE_URL empty — set it to your ngrok URL (or VERIFY_TWILIO_SIGNATURE=false while first wiring)"
 if [ -z "$(getenv GOOGLE_API_KEY)" ]; then
   ./.venv/bin/python -c "import google.auth; google.auth.default()" >/dev/null 2>&1 \
