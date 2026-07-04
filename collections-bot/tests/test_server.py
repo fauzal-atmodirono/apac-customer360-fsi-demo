@@ -18,7 +18,7 @@ CONTACTS = {"001": Contact("001", "Encik Ahmad", "INTENSIVE", "whatsapp:+60123",
 
 class FakeAdapter:
     def __init__(self): self.sent = []
-    def send(self, channel, to, body, subject=""):
+    def send(self, channel, to, body, subject="", html=""):
         self.sent.append((channel, to, body)); return ("SMx", "queued")
     def verify(self, url, params, signature): return True
 

@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import conversation
+import email_template
 import tones
 from config import load_settings, load_contacts
 
@@ -66,8 +67,11 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
             inp.customer_id, inp.channel, facts.dpd, facts.stage,
             tones.floor_tone(facts.stage), "ms", dest,
         )
+        subject, html = "", ""
+        if inp.channel == "email":
+            subject, html = email_template.render(contact.name, opening, facts)
         try:
-            sid, status = adapter.send(inp.channel, dest, opening)
+            sid, status = adapter.send(inp.channel, dest, opening, subject=subject, html=html)
         except Exception as e:  # noqa: BLE001 - record the failure, surface to UI
             store.add_message(cid, "out", inp.channel, opening, twilio_sid=None, status="failed")
             return JSONResponse({"conversation_id": cid, "send_error": str(e)}, status_code=200)

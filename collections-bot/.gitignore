@@ -4,3 +4,4 @@ demo-contacts.json
 __pycache__/
 .pytest_cache/
 .venv/
+email-preview-*.html

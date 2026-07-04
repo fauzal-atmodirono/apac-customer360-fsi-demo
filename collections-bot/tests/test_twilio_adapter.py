@@ -59,6 +59,15 @@ def test_send_email_uses_smtp_sender():
     assert sent[0]["Subject"] == "Notis"
     assert "Body text" in sent[0].get_content()
 
+def test_send_email_html_builds_multipart_alternative():
+    sent = []
+    a = TwilioAdapter(settings(), smtp_sender=lambda m: sent.append(m))
+    a.send("email", "u@x.com", "plain fallback", subject="S", html="<p>rich</p>")
+    m = sent[0]
+    assert m.is_multipart()
+    types = {p.get_content_type() for p in m.iter_parts()}
+    assert "text/plain" in types and "text/html" in types
+
 def test_simulated_channel_skips_real_send():
     class Boom:
         def create(self, **k): raise AssertionError("real send must not happen for a simulated channel")

@@ -29,7 +29,7 @@ class TwilioAdapter:
         return self._validator
 
     # -- public API -------------------------------------------------------
-    def send(self, channel: str, to: str, body: str, subject: str = "") -> tuple[str, str]:
+    def send(self, channel: str, to: str, body: str, subject: str = "", html: str = "") -> tuple[str, str]:
         if channel in self._simulate:
             return ("simulated", "simulated")
         if channel == "whatsapp":
@@ -37,7 +37,7 @@ class TwilioAdapter:
         if channel == "sms":
             return self._send_message(self._s.sms_from, to, body)
         if channel == "email":
-            return self._send_email(to, subject or "Bank Muamalat — Peringatan Pembayaran", body)
+            return self._send_email(to, subject or "Bank Muamalat — Peringatan Pembayaran", body, html)
         raise SendError(f"unknown channel: {channel}")
 
     def _send_message(self, from_: str, to: str, body: str) -> tuple[str, str]:
@@ -47,14 +47,16 @@ class TwilioAdapter:
         except Exception as e:  # noqa: BLE001
             raise SendError(str(e)) from e
 
-    def _send_email(self, to: str, subject: str, body: str) -> tuple[str, str]:
+    def _send_email(self, to: str, subject: str, body: str, html: str = "") -> tuple[str, str]:
         try:
             from email.message import EmailMessage
             msg = EmailMessage()
             msg["From"] = f"{self._s.email_from_name} <{self._s.email_from}>"
             msg["To"] = to
             msg["Subject"] = subject
-            msg.set_content(body)
+            msg.set_content(body)  # plain-text fallback part
+            if html:
+                msg.add_alternative(html, subtype="html")  # -> multipart/alternative
             sender = self._smtp_sender or self._default_smtp_send
             sender(msg)
             return ("email", "sent")
