@@ -101,8 +101,16 @@ SMOKE_BASE=https://<service-url> ./smoke.sh 0019286954 whatsapp
   **Service Account User** (to run-as the SA), and permission to enable the
   `run`, `cloudbuild`, `artifactregistry`, `aiplatform` APIs.
 - Runtime service account (default compute SA unless `RUNTIME_SA=` is set) needs
-  **Vertex AI User** (`roles/aiplatform.user`, Gemini ADC) and **BigQuery Job User +
-  Data Viewer** on the gold dataset.
+  **Vertex AI User** (`roles/aiplatform.user`, Gemini ADC), **BigQuery Job User +
+  Data Viewer** (case lookup), and — with `STORE_BACKEND=firestore` — **Datastore User**
+  (`roles/datastore.user`) **on the Firestore project** (`lv-playground-genai`).
+- **`./grant-iam.sh`** applies all of the runtime-SA bindings above (idempotent). Run it as
+  a principal with IAM-admin on both projects. Add `INVOKER=user:you@devoteam.com` to also
+  grant yourself `run.invoker` on the private dashboard:
+  ```bash
+  ./grant-iam.sh                                  # runtime SA: Vertex + BigQuery + Firestore
+  INVOKER=user:you@devoteam.com ./grant-iam.sh    # + open the private webapp
+  ```
 
 ### Conversation store: SQLite vs Firestore
 
