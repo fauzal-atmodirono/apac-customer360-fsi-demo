@@ -7,7 +7,7 @@ locals {
     bronze     = { id = "demo_bronze_as400", desc = "Bronze: raw AS400 extracts loaded by the orchestrator." }
     silver     = { id = "demo_silver_banking", desc = "Silver: conformed dimensional models (Dataform)." }
     gold       = { id = "demo_gold_analytics", desc = "Gold: Customer 360 analytical marts (Dataform)." }
-    assertions = { id = "dataform_assertions", desc = "Dataform assertion (data-quality) result views." }
+    assertions = { id = "demo_dataform_assertions", desc = "Dataform assertion (data-quality) result views." }
   }
 }
 

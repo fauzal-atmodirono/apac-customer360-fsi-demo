@@ -11,7 +11,7 @@ from google.adk.agents import LlmAgent
 from google.adk.integrations.bigquery import BigQueryCredentialsConfig, BigQueryToolset
 from google.adk.integrations.bigquery.config import BigQueryToolConfig, WriteMode
 
-PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "nbs-playground-data-analytics")
+PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "lv-playground-genai")
 GOLD = os.environ.get("GOLD_DATASET", "demo_gold_analytics")
 BQ_LOCATION = os.environ.get("BQ_LOCATION", "asia-southeast2")
 MODEL = os.environ.get("AGENT_MODEL", "gemini-2.5-flash")

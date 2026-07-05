@@ -59,6 +59,9 @@ make load   PROJECT=<proj>        # or let the orchestrator do it (step 4)
 # 4. Run Silver + Gold + assertions (injects policy-tag URNs from TF output)
 make df-run PROJECT=<proj>
 
+# 4b. Seed the Executive KPI baseline the webapp reads (not part of the Dataform graph)
+make seed-analytics PROJECT=<proj> BQ_LOCATION=<loc>
+
 # 5. Verify (see Governance + Verification below)
 ```
 
@@ -105,7 +108,7 @@ they're visible/runnable in the Console and execute under a dedicated service ac
 workflow." Enable with `create_dataform_repo = true` (already set), then:
 
 ```bash
-make dataform-deploy PROJECT=nbs-playground-data-analytics
+make dataform-deploy PROJECT=lv-playground-genai
 ```
 
 This (`ingestion/push_dataform_repo.py`) commits `dataform/` to the repo's `main` branch via

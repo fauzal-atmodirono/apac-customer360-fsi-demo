@@ -12,6 +12,12 @@ locals {
     "workflows.googleapis.com",
     "workflowexecutions.googleapis.com",
     "cloudscheduler.googleapis.com",
+    # Cloud Run app stack (webapp + ADK "Ask the data" agent).
+    "run.googleapis.com",
+    "artifactregistry.googleapis.com",
+    "cloudbuild.googleapis.com",
+    "aiplatform.googleapis.com",
+    "secretmanager.googleapis.com",
   ]
 
   # Dataform service agent — needs fine-grained reader to write/preserve policy
