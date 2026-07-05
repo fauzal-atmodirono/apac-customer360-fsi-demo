@@ -59,7 +59,14 @@ class FirestoreStore:
         return snap.to_dict() if snap.exists else None
 
     def latest_open_by_dest(self, dest) -> dict | None:
-        docs = [d.to_dict() for d in self._convs.where(filter=self._eq("dest", dest)).stream()]
+        # A conversation's dest may be a comma-list (message broadcast to several numbers);
+        # match if `dest` (the inbound sender) is any one of them. Load + filter in memory
+        # (demo volumes) since Firestore can't substring-match.
+        docs = []
+        for snap in self._convs.stream():
+            d = snap.to_dict()
+            if dest in [x.strip() for x in (d.get("dest") or "").split(",")]:
+                docs.append(d)
         if not docs:
             return None
         docs.sort(key=lambda d: d.get("started_at") or "", reverse=True)

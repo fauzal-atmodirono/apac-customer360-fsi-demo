@@ -110,6 +110,13 @@ def test_latest_open_by_dest(monkeypatch):
     assert s.latest_open_by_dest("whatsapp:+99") is None
 
 
+def test_latest_open_by_dest_matches_any_member():
+    s = make_store()
+    cid = s.create_conversation("001", "whatsapp", 10, "SOFT_REMINDER", "FRIENDLY", "ms",
+                                "whatsapp:+A, whatsapp:+B, whatsapp:+C")
+    assert s.latest_open_by_dest("whatsapp:+B")["id"] == cid
+    assert s.latest_open_by_dest("whatsapp:+Z") is None
+
 def test_update_conversation_and_message_exists():
     s = make_store()
     cid = s.create_conversation("001", "whatsapp", 10, "SOFT_REMINDER", "FRIENDLY", "ms", "whatsapp:+60")

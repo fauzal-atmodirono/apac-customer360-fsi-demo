@@ -29,6 +29,13 @@ def test_latest_open_by_dest(tmp_path):
     assert s.latest_open_by_dest("whatsapp:+60")["id"] == cid2
     assert s.latest_open_by_dest("whatsapp:+99") is None
 
+def test_latest_open_by_dest_matches_any_member(tmp_path):
+    s = make_store(tmp_path)
+    cid = s.create_conversation("001", "whatsapp", 10, "SOFT_REMINDER", "FRIENDLY", "ms",
+                                "whatsapp:+A, whatsapp:+B, whatsapp:+C")
+    assert s.latest_open_by_dest("whatsapp:+B")["id"] == cid  # a broadcast member replies
+    assert s.latest_open_by_dest("whatsapp:+Z") is None
+
 def test_update_conversation_and_message_exists(tmp_path):
     s = make_store(tmp_path)
     cid = s.create_conversation("001", "whatsapp", 10, "SOFT_REMINDER", "FRIENDLY", "ms", "whatsapp:+60")

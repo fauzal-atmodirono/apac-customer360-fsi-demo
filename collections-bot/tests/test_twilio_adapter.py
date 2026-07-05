@@ -28,6 +28,26 @@ def test_send_whatsapp_prefixes_and_uses_whatsapp_from():
     assert msgs.sent[0]["from"] == "whatsapp:+1888"
     assert msgs.sent[0]["to"] == "whatsapp:+60123"
 
+def test_send_whatsapp_broadcasts_to_all_numbers():
+    msgs = FakeMsg()
+    a = TwilioAdapter(settings(), messages_client=msgs)
+    sid, status = a.send("whatsapp", "whatsapp:+60A, whatsapp:+60B, whatsapp:+60C", "Salam")
+    assert [m["to"] for m in msgs.sent] == ["whatsapp:+60A", "whatsapp:+60B", "whatsapp:+60C"]
+    assert (sid, status) == ("SM1", "queued")  # primary (first) recipient's result
+
+def test_broadcast_swallows_secondary_failure():
+    class Flaky:
+        def __init__(self): self.calls = 0
+        def create(self, from_, to, body):
+            self.calls += 1
+            if self.calls == 2:
+                raise RuntimeError("63016 not joined")
+            class R: sid, status = "SM1", "queued"
+            return R()
+    a = TwilioAdapter(settings(), messages_client=Flaky())
+    # primary ok, a broadcast copy fails -> swallowed, still returns the primary result
+    assert a.send("whatsapp", "whatsapp:+A, whatsapp:+B", "x") == ("SM1", "queued")
+
 def test_send_sms_uses_sms_from():
     msgs = FakeMsg()
     a = TwilioAdapter(settings(), messages_client=msgs)

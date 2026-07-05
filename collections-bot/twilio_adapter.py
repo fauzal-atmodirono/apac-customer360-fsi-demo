@@ -41,11 +41,21 @@ class TwilioAdapter:
         raise SendError(f"unknown channel: {channel}")
 
     def _send_message(self, from_: str, to: str, body: str) -> tuple[str, str]:
-        try:
-            msg = self._messages_client().create(from_=from_, to=to, body=body)
-            return msg.sid, msg.status
-        except Exception as e:  # noqa: BLE001
-            raise SendError(str(e)) from e
+        # `to` may be a comma-separated list — broadcast the same message to each number
+        # (e.g. all demo handsets). The first recipient is primary: its sid/status is
+        # returned and stored, and if IT fails the whole send fails; a failed broadcast
+        # copy (e.g. a handset that hasn't joined the sandbox) is swallowed.
+        recipients = [t.strip() for t in to.split(",") if t.strip()]
+        primary = None
+        for i, r in enumerate(recipients):
+            try:
+                msg = self._messages_client().create(from_=from_, to=r, body=body)
+                if i == 0:
+                    primary = (msg.sid, msg.status)
+            except Exception as e:  # noqa: BLE001
+                if i == 0:
+                    raise SendError(str(e)) from e
+        return primary if primary is not None else ("", "sent")
 
     def _send_email(self, to: str, subject: str, body: str, html: str = "") -> tuple[str, str]:
         try:

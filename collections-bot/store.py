@@ -66,12 +66,16 @@ class Store:
         return dict(row) if row else None
 
     def latest_open_by_dest(self, dest) -> dict | None:
+        # A conversation's dest may be a comma-list (message broadcast to several numbers);
+        # match if `dest` (the inbound sender) is any one of them.
         with self._conn() as c:
-            row = c.execute(
-                "SELECT * FROM conversations WHERE dest=? ORDER BY started_at DESC, rowid DESC LIMIT 1",
-                (dest,),
-            ).fetchone()
-        return dict(row) if row else None
+            rows = c.execute(
+                "SELECT * FROM conversations ORDER BY started_at DESC, rowid DESC"
+            ).fetchall()
+        for r in rows:
+            if dest in [d.strip() for d in (r["dest"] or "").split(",")]:
+                return dict(r)
+        return None
 
     def update_conversation(self, conversation_id, **fields) -> None:
         cols = {k: v for k, v in fields.items() if k in _ALLOWED_UPDATES}
