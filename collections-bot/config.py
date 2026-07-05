@@ -30,6 +30,7 @@ class Settings:
     bot_api_key: str = ""
     simulate_channels: str = ""
     store_backend: str = "sqlite"
+    contacts_backend: str = "json"  # "json" (demo-contacts.json) or "firestore"
     firestore_project: str = ""
     firestore_database: str = "(default)"
     bq_job_project: str = ""  # run BQ jobs here; tables still qualified by gcp_project
@@ -75,6 +76,7 @@ def load_settings(env: dict | None = None) -> Settings:
         bot_api_key=g("BOT_API_KEY"),
         simulate_channels=g("SIMULATE_CHANNELS"),
         store_backend=g("STORE_BACKEND", "sqlite").lower(),
+        contacts_backend=g("CONTACTS_BACKEND", "json").lower(),
         firestore_project=g("FIRESTORE_PROJECT"),
         firestore_database=g("FIRESTORE_DATABASE", "(default)"),
         bq_job_project=g("BQ_JOB_PROJECT"),

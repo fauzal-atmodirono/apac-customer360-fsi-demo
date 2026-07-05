@@ -145,7 +145,11 @@ def _build_default_app() -> FastAPI:
     from dotenv import load_dotenv
     load_dotenv()
     settings = load_settings()
-    contacts = load_contacts("demo-contacts.json")
+    if settings.contacts_backend == "firestore":
+        from firestore_contacts import FirestoreContacts
+        contacts = FirestoreContacts(settings.firestore_project, settings.firestore_database)
+    else:
+        contacts = load_contacts("demo-contacts.json")
     from twilio_adapter import TwilioAdapter
     from case_lookup import CaseLookup
     from llm import Gemini
