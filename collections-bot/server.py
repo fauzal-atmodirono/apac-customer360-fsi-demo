@@ -35,6 +35,16 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
     def _dest(contact, channel) -> str:
         return {"whatsapp": contact.whatsapp, "sms": contact.sms, "email": contact.email}[channel]
 
+    # Friendly root so opening the Cloud Run URL in a browser shows a status banner
+    # instead of a bare 404 (the API itself has no homepage).
+    @app.get("/")
+    def root():
+        return {
+            "service": "Bank Muamalat — Collections bot",
+            "status": "ok",
+            "endpoints": ["/health", "/start", "/contacts", "/conversations", "/twilio/inbound"],
+        }
+
     # NB: "/healthz" is intercepted by Cloud Run's frontend (returns a Google 404 before
     # reaching the container), so the liveness route is "/health".
     @app.get("/health")
