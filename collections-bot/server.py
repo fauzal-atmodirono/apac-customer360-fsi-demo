@@ -35,8 +35,10 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
     def _dest(contact, channel) -> str:
         return {"whatsapp": contact.whatsapp, "sms": contact.sms, "email": contact.email}[channel]
 
-    @app.get("/healthz")
-    def healthz():
+    # NB: "/healthz" is intercepted by Cloud Run's frontend (returns a Google 404 before
+    # reaching the container), so the liveness route is "/health".
+    @app.get("/health")
+    def health():
         return {"ok": True}
 
     @app.get("/contacts", dependencies=[Depends(_auth)])

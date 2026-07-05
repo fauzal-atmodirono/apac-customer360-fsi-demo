@@ -110,7 +110,7 @@ def test_protected_routes_require_key_when_set(tmp_path):
     c = TestClient(app)
     assert c.get("/contacts").status_code == 401
     assert c.get("/contacts", headers={"X-Bot-Key": "secret"}).status_code == 200
-    assert c.get("/healthz").status_code == 200  # healthz stays open
+    assert c.get("/health").status_code == 200  # health stays open
 
 def test_start_uses_contact_stage_when_bq_misses(tmp_path):
     class DefaultLookup:

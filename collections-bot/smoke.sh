@@ -12,11 +12,19 @@ export SMOKE_KEY="$(getenv BOT_API_KEY)"
 PY="$([ -x .venv/bin/python ] && echo ./.venv/bin/python || echo python3)"
 
 exec "$PY" - "$@" <<'PYEOF'
-import json, os, sys, time, urllib.request, urllib.error
+import json, os, ssl, sys, time, urllib.request, urllib.error
 
 BASE = os.environ.get("SMOKE_BASE", "").rstrip("/") or f"http://localhost:{os.environ.get('SMOKE_PORT', '8100')}"
 KEY  = os.environ.get("SMOKE_KEY", "")
 HEAD = {"X-Bot-Key": KEY} if KEY else {}
+
+# macOS Python often lacks a system CA bundle (SSL: CERTIFICATE_VERIFY_FAILED against the
+# HTTPS Cloud Run URL). Use certifi's bundle if present (pulled in by the google libs).
+try:
+    import certifi
+    _CTX = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _CTX = ssl.create_default_context()
 
 def call(method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
@@ -25,7 +33,7 @@ def call(method, path, body=None):
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(BASE + path, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
+        with urllib.request.urlopen(req, timeout=120, context=_CTX) as r:
             return r.status, json.loads(r.read() or "null")
     except urllib.error.HTTPError as e:
         try:
@@ -36,9 +44,9 @@ def call(method, path, body=None):
         print(f"✗ bot not reachable at {BASE} — start it first: ./run.sh  ({e.reason})")
         sys.exit(1)
 
-st, _ = call("GET", "/healthz")
+st, _ = call("GET", "/health")
 if st != 200:
-    print(f"✗ /healthz returned {st}"); sys.exit(1)
+    print(f"✗ /health returned {st}"); sys.exit(1)
 
 cid_arg = sys.argv[1] if len(sys.argv) > 1 else ""
 chan    = sys.argv[2] if len(sys.argv) > 2 else "whatsapp"
