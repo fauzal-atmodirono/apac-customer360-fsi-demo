@@ -3,10 +3,10 @@
 # orchestrator (Cloud Workflows / Composer) using values emitted by Terraform,
 # so the same code is portable across GCP projects.
 dataformCoreVersion: 3.0.0
-defaultProject: nbs-playground-data-analytics
+defaultProject: lv-playground-genai
 defaultLocation: asia-southeast2
 defaultDataset: demo_silver_banking
-defaultAssertionDataset: dataform_assertions
+defaultAssertionDataset: demo_dataform_assertions
 vars:
   bronze_dataset: demo_bronze_as400
   silver_dataset: demo_silver_banking

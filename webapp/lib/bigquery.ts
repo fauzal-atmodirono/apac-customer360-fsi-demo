@@ -2,12 +2,12 @@ import "server-only";
 import { BigQuery } from "@google-cloud/bigquery";
 import { GoogleAuth, Impersonated } from "google-auth-library";
 
-export const PROJECT = process.env.GCP_PROJECT ?? "nbs-playground-data-analytics";
+export const PROJECT = process.env.GCP_PROJECT ?? "lv-playground-genai";
 export const LOCATION = process.env.BQ_LOCATION ?? "asia-southeast2";
 export const GOLD = process.env.GOLD_DATASET ?? "demo_gold_analytics";
 export const SILVER = process.env.SILVER_DATASET ?? "demo_silver_banking";
 export const MASKED_SA =
-  process.env.MASKED_SA ?? "c360-masked-reader@nbs-playground-data-analytics.iam.gserviceaccount.com";
+  process.env.MASKED_SA ?? "c360-masked-reader@lv-playground-genai.iam.gserviceaccount.com";
 
 export const MART = `\`${PROJECT}.${GOLD}.mart_customer_360\``;
 export const PERS = `\`${PROJECT}.${GOLD}.mart_personalization_signals\``;

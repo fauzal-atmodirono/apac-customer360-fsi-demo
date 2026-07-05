@@ -10,7 +10,7 @@ TF_DIR      ?= terraform
 TFVARS      ?= envs/dev.tfvars
 PY          ?= python3
 
-.PHONY: help venv gen-data tf-init tf-plan tf-apply tf-destroy upload load df-compile df-run verify clean
+.PHONY: help venv gen-data tf-init tf-plan tf-apply tf-destroy upload load df-compile dataform-deploy df-run seed-analytics verify clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -51,6 +51,9 @@ df-run: ## Run Silver+Gold+assertions via Cloud Workflows (reads policy-tag vars
 	gcloud workflows run daily_as400_medallion_load --location=$(REGION) \
 	  --data="$$(cd $(TF_DIR) && terraform output -json policy_tag_vars | \
 	    python3 -c 'import sys,json; v=json.load(sys.stdin); print(json.dumps({"vars":v,"location":"$(REGION)","bq_location":"$(BQ_LOCATION)"}))')"
+
+seed-analytics: ## Seed the Executive KPI baseline table (analytics/kpi_snapshots.sql) the webapp reads
+	bq query --project_id=$(PROJECT) --location=$(BQ_LOCATION) --nouse_legacy_sql < analytics/kpi_snapshots.sql
 
 verify: ## Print the demo verification queries to run in BigQuery
 	@echo "Run analytics/customer_360_queries.sql in BigQuery as different identities (see README)."

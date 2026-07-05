@@ -9,7 +9,7 @@ as the Dataform service agent.
 
 Usage:
     python ingestion/push_dataform_repo.py \
-        --project nbs-playground-data-analytics --location asia-southeast2 \
+        --project lv-playground-genai --location asia-southeast2 \
         --repo c360-medallion --dataform-dir dataform \
         --vars-json "$(cd terraform && terraform output -json policy_tag_vars)"
 
