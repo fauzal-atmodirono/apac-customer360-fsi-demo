@@ -32,6 +32,8 @@ class Settings:
     store_backend: str = "sqlite"
     firestore_project: str = ""
     firestore_database: str = "(default)"
+    bq_job_project: str = ""  # run BQ jobs here; tables still qualified by gcp_project
+    vertex_project: str = ""  # run Vertex/Gemini here (falls back to gcp_project)
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,8 @@ def load_settings(env: dict | None = None) -> Settings:
         store_backend=g("STORE_BACKEND", "sqlite").lower(),
         firestore_project=g("FIRESTORE_PROJECT"),
         firestore_database=g("FIRESTORE_DATABASE", "(default)"),
+        bq_job_project=g("BQ_JOB_PROJECT"),
+        vertex_project=g("VERTEX_PROJECT"),
     )
 
 

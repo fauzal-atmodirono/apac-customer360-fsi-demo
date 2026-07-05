@@ -24,7 +24,11 @@ class CaseLookup:
     def _bq(self):
         if self._client is None:
             from google.cloud import bigquery
-            self._client = bigquery.Client(project=self._s.gcp_project, location=self._s.bq_location)
+            # Run the query job in bq_job_project (falls back to gcp_project); tables are
+            # still qualified by gcp_project in build_sql, so this supports reading marts
+            # in one project while billing the job to another (cross-project deploys).
+            job_project = self._s.bq_job_project or self._s.gcp_project
+            self._client = bigquery.Client(project=job_project, location=self._s.bq_location)
         return self._client
 
     def facts_for(self, customer_id: str, name: str) -> CaseFacts:
