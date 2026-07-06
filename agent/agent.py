@@ -44,7 +44,9 @@ In-scope tables (both in `{PROJECT}.{GOLD}`). Query ONLY these two:
 - mart_financing_health (1 row/customer with financing): customer_id, loans (# financing accounts),
   on_time_rate (0-1), current_dpd (worst current days-past-due), arrears_bucket
   (Current/1-30/31-60/61-90/90+), total_arrears (missed installments, RM),
-  is_npf (BOOL, TRUE when current_dpd > 90 → non-performing financing).
+  is_npf (BOOL, TRUE when current_dpd > 90 → non-performing financing),
+  collectibility (1-5 regulatory class from DPD: 1=Current, 2=Special Mention, 3=Substandard,
+  4=Doubtful, 5=Loss), collectibility_label ('Kol-1 Current' .. 'Kol-5 Loss').
 
 The two marts join on `customer_id`. Amounts are in Malaysian Ringgit (RM).
 """

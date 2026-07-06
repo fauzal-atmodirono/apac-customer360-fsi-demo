@@ -1,11 +1,14 @@
 """FastAPI app for the collections bot: outbound trigger + inbound webhook + read model."""
 from dataclasses import replace
+from datetime import date
 from fastapi import FastAPI, Request, Response, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import clock
 import conversation
 import email_template
+import ptp
 import tones
 from config import load_settings, load_contacts
 
@@ -15,7 +18,29 @@ class StartIn(BaseModel):
     channel: str = "whatsapp"
 
 
-def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
+class PtpIn(BaseModel):
+    customer_id: str
+    promise_date: str
+    amount: float | None = None
+    conversation_id: str | None = None
+
+
+class PtpUpdateIn(BaseModel):
+    status: str | None = None  # KEPT or CANCELLED
+    promise_date: str | None = None
+    amount: float | None = None
+
+
+def _valid_iso_date(value: str) -> bool:
+    try:
+        date.fromisoformat(value)
+        return True
+    except ValueError:
+        return False
+
+
+def build_app(settings, contacts, store, adapter, lookup, llm_call,
+              today_fn=clock.kl_today) -> FastAPI:
     app = FastAPI(title="Bank Muamalat — Collections bot")
 
     def _auth(x_bot_key: str | None = Header(default=None)):
@@ -42,7 +67,8 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
         return {
             "service": "Bank Muamalat — Collections bot",
             "status": "ok",
-            "endpoints": ["/health", "/start", "/contacts", "/conversations", "/twilio/inbound"],
+            "endpoints": ["/health", "/start", "/contacts", "/conversations",
+                          "/ptps", "/outreach-summary", "/twilio/inbound"],
         }
 
     # NB: "/healthz" is intercepted by Cloud Run's frontend (returns a Google 404 before
@@ -66,6 +92,14 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
             return JSONResponse({"error": f"unknown debtor {inp.customer_id}"}, status_code=422)
         if inp.channel not in ("whatsapp", "sms", "email"):
             return JSONResponse({"error": f"unknown channel {inp.channel}"}, status_code=422)
+        # PTP suppression: never chase a debtor whose promise-to-pay is not yet past due.
+        # active_ptp_for lazily breaks expired promises, so sends resume the day after.
+        active = store.active_ptp_for(inp.customer_id, today_fn())
+        if active:
+            return JSONResponse(
+                {"error": "active promise-to-pay", "reason": "ACTIVE_PTP",
+                 "ptp_id": active["id"], "promise_date": active["promise_date"]},
+                status_code=409)
         facts = lookup.facts_for(inp.customer_id, contact.name)
         # Demo integrity: when BigQuery has no real case row (default fallback has empty
         # loan_id), trust the contact's configured DPD stage so the badge and the opener tone match.
@@ -93,6 +127,68 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
     @app.get("/conversations", dependencies=[Depends(_auth)])
     def conversations():
         return store.list_conversations()
+
+    @app.get("/ptps", dependencies=[Depends(_auth)])
+    def list_ptps(customer_id: str | None = None):
+        store.mark_broken_ptps(today_fn())
+        return store.list_ptps(customer_id=customer_id)
+
+    @app.post("/ptps", dependencies=[Depends(_auth)])
+    def create_ptp(inp: PtpIn):
+        if inp.customer_id not in contacts:
+            return JSONResponse({"error": f"unknown debtor {inp.customer_id}"}, status_code=422)
+        if not _valid_iso_date(inp.promise_date):
+            return JSONResponse({"error": f"bad promise_date {inp.promise_date!r} (want YYYY-MM-DD)"},
+                                status_code=422)
+        active = store.active_ptp_for(inp.customer_id, today_fn())
+        if active:
+            return JSONResponse({"error": "debtor already has an active promise-to-pay",
+                                 "ptp_id": active["id"]}, status_code=409)
+        pid = store.create_ptp(inp.customer_id, inp.conversation_id,
+                               inp.promise_date, inp.amount, "manual")
+        return {"ptp_id": pid}
+
+    @app.post("/ptps/{ptp_id}", dependencies=[Depends(_auth)])
+    def update_ptp(ptp_id: str, inp: PtpUpdateIn):
+        record = store.get_ptp(ptp_id)
+        if not record:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if record["status"] != "ACTIVE":
+            return JSONResponse({"error": f"ptp is {record['status']}, only ACTIVE can change"},
+                                status_code=409)
+        fields = {}
+        if inp.status is not None:
+            if inp.status not in ("KEPT", "CANCELLED"):
+                return JSONResponse({"error": "status must be KEPT or CANCELLED"}, status_code=422)
+            fields["status"] = inp.status
+        if inp.promise_date is not None:
+            # Past dates are allowed on purpose: moving the date back is the demo
+            # lever for expiring suppression without waiting days.
+            if not _valid_iso_date(inp.promise_date):
+                return JSONResponse({"error": f"bad promise_date {inp.promise_date!r}"}, status_code=422)
+            fields["promise_date"] = inp.promise_date
+        if inp.amount is not None:
+            fields["amount"] = inp.amount
+        if fields:
+            store.update_ptp(ptp_id, **fields)
+        return {"ptp_id": ptp_id, **store.get_ptp(ptp_id)}
+
+    @app.get("/outreach-summary", dependencies=[Depends(_auth)])
+    def outreach_summary():
+        store.mark_broken_ptps(today_fn())
+        summary = store.outreach_summary()
+        today = today_fn()
+        for cif, row in summary.items():
+            active = store.active_ptp_for(cif, today)
+            row["active_ptp"] = active
+        # debtors with a PTP but no conversation yet (manual PTP before first contact)
+        for record in store.list_ptps():
+            cif = record["customer_id"]
+            if record["status"] == "ACTIVE" and cif not in summary:
+                summary[cif] = {"contacted": False, "replied": False, "last_contact_at": None,
+                                "last_channel": None, "last_intent": None, "last_outcome": None,
+                                "active_ptp": record}
+        return summary
 
     @app.get("/conversations/{conversation_id}", dependencies=[Depends(_auth)])
     def conversation_detail(conversation_id: str):
@@ -136,6 +232,14 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call) -> FastAPI:
                           twilio_sid=out_sid, status=reply_status)
         store.update_conversation(conv["id"], tone=turn.tone, language=turn.language,
                                   detected_intent=turn.intent, outcome=turn.outcome)
+        # An AGREE reply is a promise to pay: record it (once) so /start suppresses
+        # further chasing until the promised date passes.
+        if turn.intent == "AGREE":
+            today = today_fn()
+            if store.active_ptp_for(conv["customer_id"], today) is None:
+                store.create_ptp(conv["customer_id"], conv["id"],
+                                 turn.ptp_date or ptp.default_promise_date(today),
+                                 turn.ptp_amount, "bot")
         return Response(content="", media_type="application/xml")
 
     return app
@@ -163,7 +267,9 @@ def _build_default_app() -> FastAPI:
     lookup = CaseLookup(settings)
     gemini = Gemini(settings.gemini_model, settings.google_api_key,
                     settings.vertex_project or settings.gcp_project, settings.vertex_location)
-    return build_app(settings, contacts, store, adapter, lookup, gemini.generate)
+    today_fn = (lambda: settings.fake_today) if settings.fake_today else clock.kl_today
+    return build_app(settings, contacts, store, adapter, lookup, gemini.generate,
+                     today_fn=today_fn)
 
 
 app = None  # built lazily by uvicorn entrypoint below to avoid import-time env/file reads

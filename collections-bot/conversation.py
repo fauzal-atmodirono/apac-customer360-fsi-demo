@@ -4,6 +4,7 @@ Pure orchestration around an injected `llm_call(system, user) -> str`, so it is
 fully testable with a fake callable (no network)."""
 from dataclasses import dataclass
 
+import ptp
 import tones
 from llm import LLMError, parse_json_block
 
@@ -25,6 +26,8 @@ class Turn:
     tone: str
     outcome: str
     degraded: bool
+    ptp_date: str | None = None    # only set when intent is AGREE
+    ptp_amount: float | None = None
 
 
 _LANG_NAME = {"ms": "Bahasa Malaysia", "en": "English"}
@@ -68,7 +71,10 @@ def build_reply_prompt(stage: str, current_language: str, history: list, inbound
         "Reply ONLY with a JSON object: "
         '{"intent": one of ["AGREE","HOSTILE","HARDSHIP","OTHER"], '
         '"language": "ms" or "en" (match the debtor\'s language), '
-        '"reply": the message text to send back}. '
+        '"reply": the message text to send back, '
+        '"ptp_date": "YYYY-MM-DD" or null (ONLY when intent is AGREE and the debtor '
+        "names a payment date — resolve relative dates like 'esok' or 'hujung bulan'), "
+        '"ptp_amount": number or null (the amount in RM the debtor commits to pay)}. '
         f"Base tone floor for this stage ({stage}) is {floor} — never be softer than this floor. "
         "If intent is HOSTILE, be sterner, official and firm about consequences (legal warning / field visit). "
         "If intent is HARDSHIP, be empathetic and OFFER restructuring ('Rekonstruksi'): "
@@ -98,10 +104,13 @@ def next_turn(*, stage: str, current_language: str, history: list, inbound_text:
         reply = (parsed.get("reply") or "").strip()
         if not reply:
             raise ValueError("empty reply")
+        ptp_date, ptp_amount = (None, None)
+        if intent == "AGREE":
+            ptp_date, ptp_amount = ptp.parse_ptp_fields(parsed)
         return Turn(
             reply=reply, intent=intent, language=language,
             tone=tones.resolve_tone(stage, intent), outcome=tones.outcome_for(intent),
-            degraded=False,
+            degraded=False, ptp_date=ptp_date, ptp_amount=ptp_amount,
         )
     except (LLMError, ValueError, AttributeError, TypeError):
         return Turn(

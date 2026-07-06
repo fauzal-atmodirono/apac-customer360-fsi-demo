@@ -33,3 +33,7 @@ def test_load_contacts_parses_file(tmp_path):
     contacts = load_contacts(str(p))
     assert contacts["001"].name == "A"
     assert contacts["001"].dpd_stage == "SOFT_REMINDER"
+
+def test_fake_today_env_flag():
+    assert load_settings({}).fake_today == ""
+    assert load_settings({"BOT_FAKE_TODAY": "2026-01-01"}).fake_today == "2026-01-01"

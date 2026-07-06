@@ -26,11 +26,15 @@ class FakeLookup:
     def facts_for(self, customer_id, name):
         return CaseFacts(stage="INTENSIVE", dpd=45, outstanding=3200.0, loan_id="LN9", name=name)
 
-def client(tmp_path, adapter=None):
+TODAY = "2026-07-06"
+
+
+def client(tmp_path, adapter=None, llm_call=None, today_fn=None):
     store = Store(str(tmp_path / "s.sqlite"))
     adapter = adapter or FakeAdapter()
     app = build_app(settings(), CONTACTS, store, adapter, FakeLookup(),
-                    llm_call=lambda s, u: "Salam Encik Ahmad.")
+                    llm_call=llm_call or (lambda s, u: "Salam Encik Ahmad."),
+                    today_fn=today_fn or (lambda: TODAY))
     return TestClient(app), store, adapter
 
 def test_contacts_lists_demo_debtors(tmp_path):
@@ -111,6 +115,119 @@ def test_protected_routes_require_key_when_set(tmp_path):
     assert c.get("/contacts").status_code == 401
     assert c.get("/contacts", headers={"X-Bot-Key": "secret"}).status_code == 200
     assert c.get("/health").status_code == 200  # health stays open
+
+def test_start_suppressed_by_active_ptp(tmp_path):
+    c, store, adapter = client(tmp_path)
+    store.create_ptp("001", None, "2026-07-10", 500.0, "manual")
+    r = c.post("/start", json={"customer_id": "001", "channel": "whatsapp"})
+    assert r.status_code == 409
+    body = r.json()
+    assert body["reason"] == "ACTIVE_PTP"
+    assert body["promise_date"] == "2026-07-10"
+    assert adapter.sent == []  # nothing was sent
+
+
+def test_start_allowed_after_promise_date_passes(tmp_path):
+    today = {"v": TODAY}
+    c, store, adapter = client(tmp_path, today_fn=lambda: today["v"])
+    pid = store.create_ptp("001", None, "2026-07-10", None, "manual")
+    assert c.post("/start", json={"customer_id": "001", "channel": "whatsapp"}).status_code == 409
+    today["v"] = "2026-07-11"  # the promise date has passed
+    r = c.post("/start", json={"customer_id": "001", "channel": "whatsapp"})
+    assert r.status_code == 200
+    assert store.get_ptp(pid)["status"] == "BROKEN"  # lazily marked on read
+
+
+def test_inbound_agree_creates_bot_ptp_with_extracted_date(tmp_path):
+    llm = lambda s, u: ('{"intent":"AGREE","language":"ms","reply":"Terima kasih.",'
+                        '"ptp_date":"2026-07-10","ptp_amount":500}')
+    c, store, _ = client(tmp_path, llm_call=llm)
+    cid = store.create_conversation("001", "whatsapp", 45, "INTENSIVE", "FIRM", "ms", "whatsapp:+60123")
+    c.post("/twilio/inbound", data={"From": "whatsapp:+60123", "Body": "saya bayar", "MessageSid": "IN1"})
+    ptps = store.list_ptps(customer_id="001")
+    assert len(ptps) == 1
+    assert ptps[0]["promise_date"] == "2026-07-10"
+    assert ptps[0]["amount"] == 500.0
+    assert ptps[0]["source"] == "bot"
+    assert ptps[0]["conversation_id"] == cid
+
+
+def test_inbound_agree_without_date_defaults_plus_three_days(tmp_path):
+    llm = lambda s, u: '{"intent":"AGREE","language":"ms","reply":"Terima kasih."}'
+    c, store, _ = client(tmp_path, llm_call=llm)
+    store.create_conversation("001", "whatsapp", 45, "INTENSIVE", "FIRM", "ms", "whatsapp:+60123")
+    c.post("/twilio/inbound", data={"From": "whatsapp:+60123", "Body": "ok", "MessageSid": "IN1"})
+    ptps = store.list_ptps(customer_id="001")
+    assert len(ptps) == 1
+    assert ptps[0]["promise_date"] == "2026-07-09"  # TODAY + 3
+
+
+def test_inbound_second_agree_does_not_duplicate_ptp(tmp_path):
+    llm = lambda s, u: '{"intent":"AGREE","language":"ms","reply":"Terima kasih."}'
+    c, store, _ = client(tmp_path, llm_call=llm)
+    store.create_conversation("001", "whatsapp", 45, "INTENSIVE", "FIRM", "ms", "whatsapp:+60123")
+    c.post("/twilio/inbound", data={"From": "whatsapp:+60123", "Body": "ok", "MessageSid": "IN1"})
+    c.post("/twilio/inbound", data={"From": "whatsapp:+60123", "Body": "ya saya bayar", "MessageSid": "IN2"})
+    assert len(store.list_ptps(customer_id="001")) == 1
+
+
+def test_ptp_crud_endpoints(tmp_path):
+    c, store, _ = client(tmp_path)
+    # unknown CIF and bad date are rejected
+    assert c.post("/ptps", json={"customer_id": "999", "promise_date": "2026-07-10"}).status_code == 422
+    assert c.post("/ptps", json={"customer_id": "001", "promise_date": "not-a-date"}).status_code == 422
+    # create
+    r = c.post("/ptps", json={"customer_id": "001", "promise_date": "2026-07-10", "amount": 500})
+    assert r.status_code == 200
+    pid = r.json()["ptp_id"]
+    assert store.get_ptp(pid)["source"] == "manual"
+    # duplicate ACTIVE rejected
+    assert c.post("/ptps", json={"customer_id": "001", "promise_date": "2026-07-12"}).status_code == 409
+    # list
+    rows = c.get("/ptps", params={"customer_id": "001"}).json()
+    assert len(rows) == 1
+    # transition to KEPT
+    assert c.post(f"/ptps/{pid}", json={"status": "KEPT"}).status_code == 200
+    assert store.get_ptp(pid)["status"] == "KEPT"
+    # settled PTPs are immutable
+    assert c.post(f"/ptps/{pid}", json={"status": "CANCELLED"}).status_code == 409
+    # unknown id
+    assert c.post("/ptps/nope", json={"status": "KEPT"}).status_code == 404
+
+
+def test_ptp_edit_accepts_past_date_as_demo_lever(tmp_path):
+    c, store, _ = client(tmp_path)
+    pid = c.post("/ptps", json={"customer_id": "001", "promise_date": "2026-07-10"}).json()["ptp_id"]
+    r = c.post(f"/ptps/{pid}", json={"promise_date": "2026-07-01"})
+    assert r.status_code == 200
+    # next suppression check lazily breaks it, so sends are allowed again
+    assert store.active_ptp_for("001", today=TODAY) is None
+    assert store.get_ptp(pid)["status"] == "BROKEN"
+
+
+def test_outreach_summary_merges_active_ptp(tmp_path):
+    c, store, _ = client(tmp_path)
+    cid = store.create_conversation("001", "whatsapp", 45, "INTENSIVE", "FIRM", "ms", "whatsapp:+60123")
+    store.add_message(cid, "out", "whatsapp", "Salam", twilio_sid="SM1")
+    store.create_ptp("001", cid, "2026-07-10", 500.0, "bot")
+    r = c.get("/outreach-summary")
+    assert r.status_code == 200
+    row = r.json()["001"]
+    assert row["contacted"] is True
+    assert row["replied"] is False
+    assert row["active_ptp"]["promise_date"] == "2026-07-10"
+
+
+def test_ptp_routes_require_key_when_set(tmp_path):
+    store = Store(str(tmp_path / "k.sqlite"))
+    s = replace(settings(), bot_api_key="secret")
+    app = build_app(s, CONTACTS, store, FakeAdapter(), FakeLookup(),
+                    llm_call=lambda sy, u: "Salam.", today_fn=lambda: TODAY)
+    c = TestClient(app)
+    assert c.get("/ptps").status_code == 401
+    assert c.get("/outreach-summary").status_code == 401
+    assert c.post("/ptps", json={"customer_id": "001", "promise_date": "2026-07-10"}).status_code == 401
+
 
 def test_start_uses_contact_stage_when_bq_misses(tmp_path):
     class DefaultLookup:
