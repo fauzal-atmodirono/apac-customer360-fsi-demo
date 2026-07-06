@@ -1,0 +1,23 @@
+{
+  "0010000042": {
+    "name": "Encik Ahmad",
+    "dpd_stage": "SOFT_REMINDER",
+    "whatsapp": "whatsapp:+60123456789",
+    "sms": "+15005550006",
+    "email": "ahmad@example.com"
+  },
+  "0010000088": {
+    "name": "Puan Siti",
+    "dpd_stage": "INTENSIVE",
+    "whatsapp": "whatsapp:+60123456790",
+    "sms": "+15005550006",
+    "email": "siti@example.com"
+  },
+  "0010000131": {
+    "name": "Encik Rajesh",
+    "dpd_stage": "RECOVERY_LEGAL",
+    "whatsapp": "whatsapp:+60123456791",
+    "sms": "+15005550006",
+    "email": "rajesh@example.com"
+  }
+}
