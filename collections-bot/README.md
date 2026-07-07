@@ -60,6 +60,28 @@ surfaces common failures (401 = key mismatch, 422 = unknown CIF/channel, WhatsAp
 63015/63016 = recipient hasn't joined the sandbox). Reply on the handset during the poll
 window to see the tone adapt. For the full back-and-forth, use the dashboard.
 
+## Promise-to-pay (PTP) & suppression
+
+An AGREE reply on WhatsApp is captured as a promise-to-pay: Gemini extracts the promised
+date/amount from the message (`ptp_date`/`ptp_amount` in the reply JSON); if the debtor
+agrees without naming a date, the promise defaults to **today + 3 days**. While a debtor
+has an **ACTIVE** PTP that is not yet past due, `POST /start` refuses with
+`409 {"reason": "ACTIVE_PTP", "promise_date": ...}` — the bot never chases a debtor who
+has promised to pay. Once the date passes, the PTP is lazily marked **BROKEN** on the next
+read (no scheduler) and sends resume.
+
+Endpoints (all `X-Bot-Key`-gated):
+
+- `GET /ptps?customer_id=` — list PTPs (sweeps past-due → BROKEN first).
+- `POST /ptps` `{customer_id, promise_date, amount?, conversation_id?}` — manual PTP
+  (409 if the debtor already has an ACTIVE one).
+- `POST /ptps/{id}` `{status? (KEPT|CANCELLED), promise_date?, amount?}` — settle or edit
+  an ACTIVE PTP. Past `promise_date` values are accepted on purpose: moving the date back
+  is the demo lever for expiring suppression without waiting days (alternative:
+  `BOT_FAKE_TODAY=<iso-date>` in `.env` overrides "today").
+- `GET /outreach-summary` — per-CIF rollup for the dashboard workbench:
+  `{contacted, replied, last_contact_at, last_channel, last_intent, last_outcome, active_ptp}`.
+
 ## Tests
 
 ```bash

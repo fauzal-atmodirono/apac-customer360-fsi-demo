@@ -55,6 +55,38 @@ const PERSONALIZATION = {
   W_BUFFER: 0.4, W_DSR: 0.4, W_SAVINGS: 0.2,
 };
 
+// Regulatory 5-class collectibility (kolektibilitas Kol-1..Kol-5) derived from
+// days-past-due. Demo assumption: OJK-style DPD bands (Bank Muamalat Malaysia /
+// BNM classifies differently). Single source of truth — the collections-bot's
+// tone stages (30/60/90) are a deliberately separate scale.
+const COLLECTIBILITY = {
+  KOL2_MAX: 90,  // 1-90    -> Kol-2 Special Mention
+  KOL3_MAX: 120, // 91-120  -> Kol-3 Substandard
+  KOL4_MAX: 180, // 121-180 -> Kol-4 Doubtful; >180 -> Kol-5 Loss
+};
+
+// SQL expression mapping a DPD int expr to the 1-5 collectibility class.
+function collectibilitySql(dpdExpr) {
+  return `CASE
+    WHEN ${dpdExpr} = 0 THEN 1
+    WHEN ${dpdExpr} <= ${COLLECTIBILITY.KOL2_MAX} THEN 2
+    WHEN ${dpdExpr} <= ${COLLECTIBILITY.KOL3_MAX} THEN 3
+    WHEN ${dpdExpr} <= ${COLLECTIBILITY.KOL4_MAX} THEN 4
+    ELSE 5
+  END`;
+}
+
+// SQL expression for the human-readable class label.
+function collectibilityLabelSql(dpdExpr) {
+  return `CASE
+    WHEN ${dpdExpr} = 0 THEN 'Kol-1 Current'
+    WHEN ${dpdExpr} <= ${COLLECTIBILITY.KOL2_MAX} THEN 'Kol-2 Special Mention'
+    WHEN ${dpdExpr} <= ${COLLECTIBILITY.KOL3_MAX} THEN 'Kol-3 Substandard'
+    WHEN ${dpdExpr} <= ${COLLECTIBILITY.KOL4_MAX} THEN 'Kol-4 Doubtful'
+    ELSE 'Kol-5 Loss'
+  END`;
+}
+
 // Render a JS string array as a SQL IN-list literal: ['A','B'] -> "'A','B'".
 function inList(arr) {
   return arr.map((v) => `'${v}'`).join(", ");
@@ -90,4 +122,4 @@ function piiColumn(description, tagKey) {
   return col;
 }
 
-module.exports = { POLICY_TAGS, IPS, CHURN, PERSONALIZATION, piiColumn, churnRiskScoreSql, timeOfDay, inList };
+module.exports = { POLICY_TAGS, IPS, CHURN, PERSONALIZATION, COLLECTIBILITY, piiColumn, churnRiskScoreSql, collectibilitySql, collectibilityLabelSql, timeOfDay, inList };

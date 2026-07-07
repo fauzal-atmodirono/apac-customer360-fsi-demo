@@ -35,6 +35,7 @@ class Settings:
     firestore_database: str = "(default)"
     bq_job_project: str = ""  # run BQ jobs here; tables still qualified by gcp_project
     vertex_project: str = ""  # run Vertex/Gemini here (falls back to gcp_project)
+    fake_today: str = ""  # ISO date overriding "today" for PTP demos (empty = real KL date)
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ def load_settings(env: dict | None = None) -> Settings:
         firestore_database=g("FIRESTORE_DATABASE", "(default)"),
         bq_job_project=g("BQ_JOB_PROJECT"),
         vertex_project=g("VERTEX_PROJECT"),
+        fake_today=g("BOT_FAKE_TODAY"),
     )
 
 

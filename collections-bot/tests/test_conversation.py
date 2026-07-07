@@ -61,3 +61,52 @@ def test_build_reply_prompt_carries_stage_and_rules():
     assert "FIRM" in system
     assert "Rekonstruksi" in system
     assert "saya susah" in user
+
+def test_build_reply_prompt_asks_for_ptp_fields():
+    system, _ = build_reply_prompt("INTENSIVE", "ms", [], "ok")
+    assert "ptp_date" in system
+    assert "ptp_amount" in system
+
+def test_next_turn_agree_extracts_ptp():
+    def fake(s, u):
+        return ('{"intent":"AGREE","language":"ms","reply":"Terima kasih.",'
+                '"ptp_date":"2026-07-10","ptp_amount":500}')
+    turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                     inbound_text="saya bayar RM500 pada 10 Julai", llm_call=fake)
+    assert turn.intent == "AGREE"
+    assert turn.ptp_date == "2026-07-10"
+    assert turn.ptp_amount == 500.0
+
+def test_next_turn_agree_without_date_leaves_ptp_none():
+    def fake(s, u):
+        return '{"intent":"AGREE","language":"ms","reply":"Terima kasih."}'
+    turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                     inbound_text="ok saya bayar", llm_call=fake)
+    assert turn.intent == "AGREE"
+    assert turn.ptp_date is None
+    assert turn.ptp_amount is None
+
+def test_next_turn_agree_tolerates_garbage_ptp_date():
+    def fake(s, u):
+        return ('{"intent":"AGREE","language":"ms","reply":"Terima kasih.",'
+                '"ptp_date":"minggu depan","ptp_amount":"lima ratus"}')
+    turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                     inbound_text="ok", llm_call=fake)
+    assert turn.ptp_date is None
+    assert turn.ptp_amount is None
+
+def test_next_turn_non_agree_ignores_ptp_fields():
+    def fake(s, u):
+        return ('{"intent":"HARDSHIP","language":"ms","reply":"Kami tawarkan penstrukturan.",'
+                '"ptp_date":"2026-07-10","ptp_amount":500}')
+    turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                     inbound_text="saya susah", llm_call=fake)
+    assert turn.ptp_date is None
+    assert turn.ptp_amount is None
+
+def test_next_turn_degraded_has_no_ptp():
+    turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                     inbound_text="???", llm_call=lambda s, u: "not json")
+    assert turn.degraded is True
+    assert turn.ptp_date is None
+    assert turn.ptp_amount is None

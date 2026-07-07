@@ -302,7 +302,7 @@ export async function paymentsData() {
 
 export async function collectionsData() {
   const STAGE_ORDER = ["SOFT_REMINDER", "INTENSIVE", "FIELD_VISIT", "RECOVERY_LEGAL"];
-  const [kpis, byStage, statusMix, trend, channel, worklist] = await Promise.all([
+  const [kpis, byStage, statusMix, trend, channel, worklist, collectibility] = await Promise.all([
     q(`SELECT
          COUNTIF(case_status IN ('ACTIVE','PTP_OBTAINED','PARTIAL_RECOVERY','LEGAL')) AS active_cases,
          COUNT(*) AS total_cases,
@@ -323,16 +323,34 @@ export async function collectionsData() {
               CAST(SAFE_DIVIDE(COUNTIF(ptp_kept), NULLIF(COUNTIF(ptp_kept IS NOT NULL), 0)) AS FLOAT64) AS ptp_kept_rate
        FROM ${FCT_COLL_ACT} GROUP BY 1 ORDER BY actions DESC`),
     q(`SELECT m.case_id, m.customer_id, d.full_name, m.stage, m.case_status, m.collector,
-              f.current_dpd, CAST(m.outstanding AS FLOAT64) AS outstanding,
+              f.current_dpd, f.collectibility_label, CAST(m.outstanding AS FLOAT64) AS outstanding,
               CAST(m.recovered_amount AS FLOAT64) AS recovered, m.ptp_made, m.ptp_kept
        FROM ${MART_COLLECTIONS} m
        JOIN ${DIM_CUSTOMERS} d USING(customer_id)
        LEFT JOIN ${MART_FINANCING} f USING(customer_id)
        WHERE m.case_status NOT IN ('RECOVERED','RESTRUCTURED','WRITTEN_OFF')
        ORDER BY m.outstanding - m.recovered_amount DESC LIMIT 15`),
+    q(`SELECT collectibility, collectibility_label AS kol, COUNT(*) AS customers,
+              CAST(SUM(total_arrears) AS FLOAT64) AS arrears
+       FROM ${MART_FINANCING} GROUP BY 1, 2 ORDER BY collectibility`),
   ]);
   (byStage as { stage: string }[]).sort((a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage));
-  return { kpis: kpis[0], byStage, statusMix, trend, channel, worklist };
+  return { kpis: kpis[0], byStage, statusMix, trend, channel, worklist, collectibility };
+}
+
+// Collectibility (Kol-1..5, demo OJK-style bands — see dataform/includes/constants.js)
+// for the outreach workbench's demo contacts.
+export async function collectibilityForCifs(cifs: string[]) {
+  if (!cifs.length) return [];
+  return q<{
+    customer_id: string; current_dpd: number; collectibility: number;
+    collectibility_label: string; total_arrears: number; arrears_bucket: string;
+  }>(
+    `SELECT customer_id, current_dpd, collectibility, collectibility_label,
+            CAST(total_arrears AS FLOAT64) AS total_arrears, arrears_bucket
+     FROM ${MART_FINANCING} WHERE customer_id IN UNNEST(@cifs)`,
+    { params: { cifs } },
+  );
 }
 
 export async function campaignsData() {

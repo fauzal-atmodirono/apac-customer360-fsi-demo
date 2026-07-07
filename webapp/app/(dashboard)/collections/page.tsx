@@ -16,8 +16,13 @@ type Collections = {
   statusMix: { status: string; cases: number }[];
   trend: { month: string; type: string; amount: number }[];
   channel: { channel: string; actions: number; contact_rate: number; ptp_kept_rate: number }[];
-  worklist: { case_id: string; customer_id: string; full_name: string; stage: string; case_status: string; collector: string; current_dpd: number; outstanding: number; recovered: number; ptp_made: number; ptp_kept: number }[];
+  worklist: { case_id: string; customer_id: string; full_name: string; stage: string; case_status: string; collector: string; current_dpd: number; collectibility_label: string | null; outstanding: number; recovered: number; ptp_made: number; ptp_kept: number }[];
+  collectibility: { collectibility: number; kol: string; customers: number; arrears: number }[];
 };
+
+const kolVariant = (label: string) =>
+  label.startsWith("Kol-1") ? "success" :
+  label.startsWith("Kol-2") ? "warning" : "danger";
 
 const statusVariant = (s: string) =>
   s === "LEGAL" || s === "WRITTEN_OFF" ? "danger" :
@@ -70,6 +75,11 @@ export default function CollectionsPage() {
         </ChartCard>
       </div>
 
+      <ChartCard title="Collectibility distribution (Kol-1 Current → Kol-5 Loss)"
+        caption={<>Regulatory 5-class collectibility derived from days-past-due (demo OJK-style bands). Kol-3 and worse is the NPF tail — <b>{data.collectibility.filter((c) => c.collectibility >= 3).reduce((a, c) => a + num(c.customers), 0)}</b> customers whose arrears need intensive recovery.</>}>
+        <VBars data={data.collectibility} xKey="kol" valueKey="customers" />
+      </ChartCard>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard title="Recovery flow (monthly, by type)"
           caption={<>Cash payments dominate recoveries, with <b>R&amp;R restructuring</b> and capped <b>ta'widh</b> compensation (Shariah-compliant, non-compounding) supplementing — no penalty interest anywhere in the flow.</>}>
@@ -90,6 +100,7 @@ export default function CollectionsPage() {
           { key: "stage", label: "Stage", fmt: (v) => <Badge variant="muted">{String(v)}</Badge> },
           { key: "case_status", label: "Status", fmt: (v) => <Badge variant={statusVariant(String(v))}>{String(v)}</Badge> },
           { key: "collector", label: "Collector" },
+          { key: "collectibility_label", label: "Kol", fmt: (v) => v ? <Badge variant={kolVariant(String(v))}>{String(v)}</Badge> : "—" },
           { key: "current_dpd", label: "DPD", align: "right" },
           { key: "outstanding", label: "Outstanding", align: "right", fmt: (v) => money(v as number) },
           { key: "recovered", label: "Recovered", align: "right", fmt: (v) => money(v as number) },
