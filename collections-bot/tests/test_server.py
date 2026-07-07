@@ -152,6 +152,20 @@ def test_inbound_agree_creates_bot_ptp_with_extracted_date(tmp_path):
     assert ptps[0]["conversation_id"] == cid
 
 
+def test_start_subtracts_paid_from_quoted_arrears(tmp_path):
+    # FakeLookup arrears = 3200; a KEPT PTP of RM1,000 -> the opening quotes RM2,200.
+    captured = {}
+    def capturing_llm(system, user):
+        captured["user"] = user
+        return "Salam."
+    c, store, _ = client(tmp_path, llm_call=capturing_llm)
+    pid = store.create_ptp("001", None, "2026-07-10", 1000.0, "manual")
+    store.update_ptp(pid, status="KEPT")
+    assert c.post("/start", json={"customer_id": "001", "channel": "whatsapp"}).status_code == 200
+    assert "2,200" in captured["user"]       # remaining after RM1,000 paid
+    assert "3,200" not in captured["user"]   # original arrears no longer quoted
+
+
 def test_inbound_agree_normalizes_wrong_year_ptp(tmp_path):
     # The model returns a past-year date for "24 Julai"; the bot must lock sends until
     # the *upcoming* 24 Jul, not create an instantly-broken (or forever-locked) promise.

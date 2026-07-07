@@ -125,6 +125,11 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call,
         # loan_id), trust the contact's configured DPD stage so the badge and the opener tone match.
         if not facts.loan_id:
             facts = replace(facts, stage=contact.dpd_stage)
+        # Demo payment overlay: quote the arrears net of recorded payments (sum of KEPT
+        # promise amounts) so the message matches the dashboard. BigQuery stays the ledger.
+        paid = store.paid_to_date(inp.customer_id)
+        if paid:
+            facts = replace(facts, outstanding=max(0.0, facts.outstanding - paid))
         opening = conversation.compose_opening(facts, llm_call=llm_call)
         dest = _dest(contact, inp.channel)
         if not dest:

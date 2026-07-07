@@ -159,6 +159,12 @@ class FirestoreStore:
         active.sort(key=lambda d: d.get("created_at") or "", reverse=True)
         return active[0]
 
+    def paid_to_date(self, customer_id) -> float:
+        # Demo overlay: total actually paid = sum of KEPT promise amounts (NULLs skipped).
+        docs = [d.to_dict() for d in
+                self._ptps.where(filter=self._eq("customer_id", customer_id)).stream()]
+        return float(sum(d.get("amount") or 0 for d in docs if d.get("status") == "KEPT"))
+
     # --- restructure (Rekonstruksi) records ----------------------------------
     # Suppresses reminders while ACTIVE; no due date, so no lazy expiry (resolved
     # manually via the workbench). Mirrors store.Store for a drop-in swap.

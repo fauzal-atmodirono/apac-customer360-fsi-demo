@@ -214,6 +214,16 @@ class Store:
             ).fetchone()
         return dict(row) if row else None
 
+    def paid_to_date(self, customer_id) -> float:
+        # Demo overlay: total actually paid = sum of KEPT promise amounts (NULLs skipped).
+        # BigQuery stays the real ledger; this only drives the displayed deduction.
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM ptps WHERE customer_id=? AND status='KEPT'",
+                (customer_id,),
+            ).fetchone()
+        return float(row[0])
+
     # --- restructure (Rekonstruksi) records ----------------------------------
     # A restructure offer suppresses outbound reminders while ACTIVE. Unlike a PTP
     # it has no due date, so it never lazily expires — a collections officer resolves

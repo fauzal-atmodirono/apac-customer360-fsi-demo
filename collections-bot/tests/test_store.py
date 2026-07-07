@@ -199,3 +199,26 @@ def test_active_restructure_for_ignores_settled(tmp_path):
         rid = s.create_restructure("001", None, None, None, "manual")
         s.update_restructure(rid, status=status)
     assert s.active_restructure_for("001") is None
+
+
+# --- demo payment overlay (paid-to-date from KEPT PTPs) ---------------------
+
+def test_paid_to_date_sums_kept_amounts(tmp_path):
+    s = make_store(tmp_path)
+    p1 = s.create_ptp("001", None, "2026-07-10", 1000.0, "bot"); s.update_ptp(p1, status="KEPT")
+    p2 = s.create_ptp("001", None, "2026-07-20", 2000.0, "manual"); s.update_ptp(p2, status="KEPT")
+    assert s.paid_to_date("001") == 3000.0
+
+
+def test_paid_to_date_ignores_non_kept_and_null_amounts(tmp_path):
+    s = make_store(tmp_path)
+    kept = s.create_ptp("001", None, "2026-07-10", 500.0, "bot"); s.update_ptp(kept, status="KEPT")
+    s.create_ptp("001", None, "2026-07-11", 999.0, "bot")                                  # ACTIVE — ignored
+    broken = s.create_ptp("001", None, "2026-07-01", 999.0, "bot"); s.update_ptp(broken, status="BROKEN")
+    nullamt = s.create_ptp("001", None, "2026-07-12", None, "bot"); s.update_ptp(nullamt, status="KEPT")  # KEPT, no amount -> 0
+    assert s.paid_to_date("001") == 500.0
+
+
+def test_paid_to_date_zero_when_no_kept(tmp_path):
+    s = make_store(tmp_path)
+    assert s.paid_to_date("001") == 0.0
