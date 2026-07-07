@@ -62,12 +62,19 @@ def compose_opening(facts: CaseFacts, llm_call, default_language: str = "ms") ->
         return tones.CANNED_OPENING[facts.stage]
 
 
-def build_reply_prompt(stage: str, current_language: str, history: list, inbound_text: str) -> tuple[str, str]:
+def build_reply_prompt(stage: str, current_language: str, history: list, inbound_text: str,
+                       today: str | None = None) -> tuple[str, str]:
     floor = tones.floor_tone(stage)
     convo = "\n".join(f"{m['direction']}: {m['body']}" for m in history)
+    date_anchor = (
+        f"Today's date is {today} (Asia/Kuala_Lumpur). Resolve any bare or relative "
+        "payment date to its next FUTURE occurrence and return it with the correct year. "
+        if today else ""
+    )
     system = (
         "You are an outbound collections assistant for Bank Muamalat (Malaysian Islamic bank). "
         "Classify the debtor's latest reply and draft the next message. "
+        f"{date_anchor}"
         "Reply ONLY with a JSON object: "
         '{"intent": one of ["AGREE","HOSTILE","HARDSHIP","OTHER"], '
         '"language": "ms" or "en" (match the debtor\'s language), '
@@ -91,8 +98,9 @@ def build_reply_prompt(stage: str, current_language: str, history: list, inbound
     return system, user
 
 
-def next_turn(*, stage: str, current_language: str, history: list, inbound_text: str, llm_call) -> Turn:
-    system, user = build_reply_prompt(stage, current_language, history, inbound_text)
+def next_turn(*, stage: str, current_language: str, history: list, inbound_text: str, llm_call,
+              today: str | None = None) -> Turn:
+    system, user = build_reply_prompt(stage, current_language, history, inbound_text, today=today)
     try:
         parsed = parse_json_block(llm_call(system, user))
         intent = parsed.get("intent", "OTHER")
@@ -107,6 +115,8 @@ def next_turn(*, stage: str, current_language: str, history: list, inbound_text:
         ptp_date, ptp_amount = (None, None)
         if intent == "AGREE":
             ptp_date, ptp_amount = ptp.parse_ptp_fields(parsed)
+            if today and ptp_date:
+                ptp_date = ptp.normalize_future_date(ptp_date, today)
         return Turn(
             reply=reply, intent=intent, language=language,
             tone=tones.resolve_tone(stage, intent), outcome=tones.outcome_for(intent),

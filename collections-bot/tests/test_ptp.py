@@ -56,3 +56,36 @@ def test_is_suppressed_non_active_statuses():
 
 def test_is_suppressed_none():
     assert ptp.is_suppressed(None, "2026-07-06") is False
+
+
+def test_normalize_future_date_rolls_past_year_to_upcoming():
+    # Debtor names "24 Julai"; the model guessed last year -> roll to the upcoming one.
+    assert ptp.normalize_future_date("2025-07-24", "2026-07-07") == "2026-07-24"
+
+
+def test_normalize_future_date_rolls_multiple_years_forward():
+    assert ptp.normalize_future_date("2023-07-24", "2026-07-07") == "2026-07-24"
+
+
+def test_normalize_future_date_keeps_already_future_date():
+    assert ptp.normalize_future_date("2026-07-24", "2026-07-07") == "2026-07-24"
+
+
+def test_normalize_future_date_today_is_kept():
+    # A promise due today is still valid — the whole promise day counts.
+    assert ptp.normalize_future_date("2026-07-07", "2026-07-07") == "2026-07-07"
+
+
+def test_normalize_future_date_rolls_passed_day_this_year_to_next_year():
+    # Today is 2026-07-07; "5 Julai" already went by this year -> next year's occurrence.
+    assert ptp.normalize_future_date("2026-07-05", "2026-07-07") == "2027-07-05"
+
+
+def test_normalize_future_date_handles_leap_day():
+    # 29 Feb rolled into a non-leap year clamps to 28 Feb rather than raising.
+    assert ptp.normalize_future_date("2024-02-29", "2026-07-07") == "2027-02-28"
+
+
+def test_normalize_future_date_passes_through_garbage():
+    assert ptp.normalize_future_date("minggu depan", "2026-07-07") == "minggu depan"
+    assert ptp.normalize_future_date(None, "2026-07-07") is None
