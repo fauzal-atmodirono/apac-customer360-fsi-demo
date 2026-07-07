@@ -51,6 +51,14 @@ export async function GET() {
     for (const p of ptps) if (!latestPtp.has(p.customer_id)) latestPtp.set(p.customer_id, p);
     const latestRestructure = new Map<string, Restructure>();
     for (const rs of restructures) if (!latestRestructure.has(rs.customer_id)) latestRestructure.set(rs.customer_id, rs);
+    // Demo overlay: paid-to-date = sum of KEPT promise amounts (same rule the bot uses,
+    // over the same PTP data, so dashboard and WhatsApp quote the same remaining balance).
+    const paidByCif = new Map<string, number>();
+    for (const p of ptps) {
+      if (p.status === "KEPT" && p.amount != null) {
+        paidByCif.set(p.customer_id, (paidByCif.get(p.customer_id) ?? 0) + p.amount);
+      }
+    }
 
     const rows = contacts.map((c) => {
       const fin = finByCif.get(c.customer_id);
@@ -58,6 +66,8 @@ export async function GET() {
       const ptp = latestPtp.get(c.customer_id) ?? null;
       const restructure = latestRestructure.get(c.customer_id) ?? null;
       const fallback = STAGE_KOL[c.dpd_stage] ?? STAGE_KOL.SOFT_REMINDER;
+      const paid = paidByCif.get(c.customer_id) ?? 0;
+      const remaining = fin?.total_arrears != null ? Math.max(0, fin.total_arrears - paid) : null;
       return {
         customer_id: c.customer_id,
         name: c.name,
@@ -67,6 +77,8 @@ export async function GET() {
         collectibility: fin?.collectibility ?? fallback.collectibility,
         collectibility_label: fin?.collectibility_label ?? fallback.label,
         total_arrears: fin?.total_arrears ?? null,
+        paid_to_date: paid,
+        remaining_arrears: remaining,
         collectibility_source: fin ? "bigquery" : "fallback",
         contacted: s?.contacted ?? false,
         replied: s?.replied ?? false,

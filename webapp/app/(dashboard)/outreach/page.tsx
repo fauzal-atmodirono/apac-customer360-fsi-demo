@@ -20,7 +20,8 @@ type Restructure = {
 type Row = {
   customer_id: string; name: string; dpd_stage: string; channels: string[];
   current_dpd: number | null; collectibility: number; collectibility_label: string;
-  total_arrears: number | null; collectibility_source: string;
+  total_arrears: number | null; paid_to_date: number; remaining_arrears: number | null;
+  collectibility_source: string;
   contacted: boolean; replied: boolean; last_contact_at: string | null;
   last_channel: string | null; last_intent: string | null; last_outcome: string | null;
   ptp: Ptp | null; restructure: Restructure | null; suppressed: boolean;
@@ -289,6 +290,13 @@ export default function OutreachPage() {
                       title={r.collectibility_source === "fallback" ? "Derived from DPD stage (no BigQuery row)" : "From mart_financing_health"}>
                       {r.collectibility_label}
                     </span>
+                    {r.paid_to_date > 0 && r.remaining_arrears != null && (
+                      <p className="mt-1 text-[10px] leading-tight text-muted-foreground"
+                        title="Demo overlay: remaining = BigQuery arrears − payments recorded via Kept PTPs. BigQuery itself is unchanged.">
+                        RM {r.remaining_arrears.toLocaleString()} left
+                        <span className="text-emerald-600"> · RM {r.paid_to_date.toLocaleString()} paid</span>
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-xs">
                     {r.current_dpd != null ? `DPD ${r.current_dpd}` : "—"}
