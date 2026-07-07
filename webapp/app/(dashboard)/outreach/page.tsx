@@ -65,6 +65,14 @@ const RESTRUCTURE_STYLE: Record<string, string> = {
   CANCELLED: "bg-muted text-muted-foreground",
 };
 
+// Actions column: one primary (Send); PTP/Rekon controls are quiet ghost buttons
+// grouped under a muted label so Send stays visually dominant.
+const GBTN = "rounded px-1.5 py-0.5 text-xs font-medium transition-colors disabled:opacity-40 disabled:hover:bg-transparent";
+const GBTN_NEUTRAL = `${GBTN} text-foreground/70 hover:bg-muted`;
+const GBTN_POSITIVE = `${GBTN} text-emerald-700 hover:bg-emerald-50`;
+const GBTN_MUTED = `${GBTN} text-muted-foreground hover:bg-muted`;
+const GROUP_LABEL = "w-11 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground";
+
 function fmtWhen(ts: string | null) {
   if (!ts) return "—";
   const d = new Date(ts);
@@ -364,7 +372,8 @@ export default function OutreachPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap justify-end gap-1.5">
+                    <div className="ml-auto flex min-w-[11rem] flex-col gap-2">
+                      {/* Primary action — the one dominant button */}
                       <button
                         disabled={busy === r.customer_id || r.suppressed || !r.channels.includes(channel)}
                         onClick={() => startOutreach(r.customer_id)}
@@ -373,57 +382,61 @@ export default function OutreachPage() {
                           : rekonActive
                             ? "Suppressed — active Rekonstruksi offer on the table"
                             : !r.channels.includes(channel) ? `No ${channel} destination` : `Send ${channel} reminder`}
-                        className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-40"
+                        className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
+                          r.suppressed || !r.channels.includes(channel)
+                            ? "bg-muted text-muted-foreground"
+                            : "bg-primary text-primary-foreground hover:bg-primary/90"
+                        }`}
                       >
                         {r.suppressed ? <Lock className="h-3 w-3" /> : <Send className="h-3 w-3" />}
                         Send
                       </button>
-                      <button
-                        disabled={busy === r.customer_id}
-                        onClick={() => setPtpForm(formOpen ? null : {
-                          cif: r.customer_id,
-                          date: active ? r.ptp!.promise_date : "",
-                          amount: active && r.ptp!.amount != null ? String(r.ptp!.amount) : "",
-                        })}
-                        className="rounded-lg border px-2 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-40"
-                      >
-                        {active ? "Edit PTP" : "Set PTP"}
-                      </button>
-                      {active && (
-                        <>
-                          <button disabled={busy === r.customer_id} onClick={() => settlePtp(r, "KEPT")}
-                            className="rounded-lg border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-40">
-                            Kept
-                          </button>
-                          <button disabled={busy === r.customer_id} onClick={() => settlePtp(r, "CANCELLED")}
-                            className="rounded-lg border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">
-                            Cancel
-                          </button>
-                        </>
-                      )}
-                      <button
-                        disabled={busy === r.customer_id}
-                        onClick={() => setRekonForm(rekonOpen ? null : {
-                          cif: r.customer_id,
-                          note: rekonActive ? r.restructure!.note ?? "" : "",
-                          installment: rekonActive && r.restructure!.new_installment != null ? String(r.restructure!.new_installment) : "",
-                        })}
-                        className="rounded-lg border px-2 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-40"
-                      >
-                        {rekonActive ? "Edit Rekon" : "Set Rekon"}
-                      </button>
-                      {rekonActive && (
-                        <>
-                          <button disabled={busy === r.customer_id} onClick={() => settleRekon(r, "ACCEPTED")}
-                            className="rounded-lg border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-40">
-                            Accept
-                          </button>
-                          <button disabled={busy === r.customer_id} onClick={() => settleRekon(r, "DECLINED")}
-                            className="rounded-lg border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">
-                            Decline
-                          </button>
-                        </>
-                      )}
+
+                      <div className="border-t" />
+
+                      {/* Promise-to-pay group */}
+                      <div className="flex items-center gap-0.5">
+                        <span className={GROUP_LABEL}>PTP</span>
+                        <button
+                          disabled={busy === r.customer_id}
+                          onClick={() => setPtpForm(formOpen ? null : {
+                            cif: r.customer_id,
+                            date: active ? r.ptp!.promise_date : "",
+                            amount: active && r.ptp!.amount != null ? String(r.ptp!.amount) : "",
+                          })}
+                          className={GBTN_NEUTRAL}
+                        >
+                          {active ? "Edit" : "Set"}
+                        </button>
+                        {active && (
+                          <>
+                            <button disabled={busy === r.customer_id} onClick={() => settlePtp(r, "KEPT")} className={GBTN_POSITIVE}>Kept</button>
+                            <button disabled={busy === r.customer_id} onClick={() => settlePtp(r, "CANCELLED")} className={GBTN_MUTED}>Cancel</button>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Rekonstruksi group */}
+                      <div className="flex items-center gap-0.5">
+                        <span className={GROUP_LABEL}>Rekon</span>
+                        <button
+                          disabled={busy === r.customer_id}
+                          onClick={() => setRekonForm(rekonOpen ? null : {
+                            cif: r.customer_id,
+                            note: rekonActive ? r.restructure!.note ?? "" : "",
+                            installment: rekonActive && r.restructure!.new_installment != null ? String(r.restructure!.new_installment) : "",
+                          })}
+                          className={GBTN_NEUTRAL}
+                        >
+                          {rekonActive ? "Edit" : "Set"}
+                        </button>
+                        {rekonActive && (
+                          <>
+                            <button disabled={busy === r.customer_id} onClick={() => settleRekon(r, "ACCEPTED")} className={GBTN_POSITIVE}>Accept</button>
+                            <button disabled={busy === r.customer_id} onClick={() => settleRekon(r, "DECLINED")} className={GBTN_MUTED}>Decline</button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </td>
                 </tr>
