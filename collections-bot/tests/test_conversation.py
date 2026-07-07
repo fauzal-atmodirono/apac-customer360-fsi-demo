@@ -111,6 +111,15 @@ def test_next_turn_degraded_has_no_ptp():
     assert turn.ptp_date is None
     assert turn.ptp_amount is None
 
+def test_next_turn_logs_reason_when_degraded(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                         inbound_text="i bisa bayar 10 julai", llm_call=lambda s, u: "not json at all")
+    assert turn.degraded is True
+    # the silent black hole is gone: the degrade reason is logged for observability
+    assert any("degrad" in r.getMessage().lower() for r in caplog.records)
+
 def test_build_reply_prompt_anchors_today_when_given():
     system, user = build_reply_prompt("INTENSIVE", "ms", [], "24 Julai", today="2026-07-07")
     assert "2026-07-07" in system or "2026-07-07" in user

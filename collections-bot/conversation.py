@@ -2,11 +2,14 @@
 
 Pure orchestration around an injected `llm_call(system, user) -> str`, so it is
 fully testable with a fake callable (no network)."""
+import logging
 from dataclasses import dataclass
 
 import ptp
 import tones
 from llm import LLMError, parse_json_block
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -122,7 +125,10 @@ def next_turn(*, stage: str, current_language: str, history: list, inbound_text:
             tone=tones.resolve_tone(stage, intent), outcome=tones.outcome_for(intent),
             degraded=False, ptp_date=ptp_date, ptp_amount=ptp_amount,
         )
-    except (LLMError, ValueError, AttributeError, TypeError):
+    except (LLMError, ValueError, AttributeError, TypeError) as exc:
+        # Not a silent black hole: log why the turn degraded so a dropped PTP/intent
+        # is traceable (the reply falls back to the canned line for this stage).
+        logger.warning("reply turn degraded (stage=%s, inbound=%r): %r", stage, inbound_text, exc)
         return Turn(
             reply=tones.CANNED_REPLY[stage], intent="OTHER", language=current_language,
             tone=tones.floor_tone(stage), outcome=tones.outcome_for("OTHER"), degraded=True,
