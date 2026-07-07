@@ -147,3 +147,55 @@ def test_outreach_summary_uses_latest_conversation(tmp_path):
     summary = s.outreach_summary()
     assert summary["001"]["last_channel"] == "whatsapp"
     assert summary["001"]["last_outcome"] == "RESTRUCTURE_OFFERED"
+
+
+# --- restructure (Rekonstruksi) records ------------------------------------
+
+def test_create_and_get_restructure(tmp_path):
+    s = make_store(tmp_path)
+    rid = s.create_restructure("001", "conv1", "Reduce installment to RM300 x 12", 300.0, "bot")
+    r = s.get_restructure(rid)
+    assert r["customer_id"] == "001"
+    assert r["conversation_id"] == "conv1"
+    assert r["note"] == "Reduce installment to RM300 x 12"
+    assert r["new_installment"] == 300.0
+    assert r["status"] == "ACTIVE"
+    assert r["source"] == "bot"
+    assert s.get_restructure("missing") is None
+
+
+def test_list_restructures_filters_by_customer(tmp_path):
+    s = make_store(tmp_path)
+    s.create_restructure("001", None, None, None, "manual")
+    s.create_restructure("002", None, "note", 200.0, "bot")
+    assert len(s.list_restructures()) == 2
+    only = s.list_restructures(customer_id="002")
+    assert len(only) == 1
+    assert only[0]["customer_id"] == "002"
+
+
+def test_update_restructure_allowlist(tmp_path):
+    s = make_store(tmp_path)
+    rid = s.create_restructure("001", None, "old", 400.0, "bot")
+    s.update_restructure(rid, status="ACCEPTED", note="new plan", new_installment=250.0, customer_id="HACK")
+    r = s.get_restructure(rid)
+    assert r["status"] == "ACCEPTED"
+    assert r["note"] == "new plan"
+    assert r["new_installment"] == 250.0
+    assert r["customer_id"] == "001"  # not in allowlist, unchanged
+
+
+def test_active_restructure_for_returns_active(tmp_path):
+    s = make_store(tmp_path)
+    rid = s.create_restructure("001", None, None, None, "bot")
+    active = s.active_restructure_for("001")
+    assert active["id"] == rid
+    assert s.active_restructure_for("002") is None
+
+
+def test_active_restructure_for_ignores_settled(tmp_path):
+    s = make_store(tmp_path)
+    for status in ("ACCEPTED", "DECLINED", "CANCELLED"):
+        rid = s.create_restructure("001", None, None, None, "manual")
+        s.update_restructure(rid, status=status)
+    assert s.active_restructure_for("001") is None

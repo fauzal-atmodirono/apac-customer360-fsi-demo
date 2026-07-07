@@ -4,7 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import {
   Radio, Loader2, MessageSquare, AlertTriangle, Check, Minus, Lock, Send,
-  CalendarClock, X,
+  CalendarClock, X, FileText,
 } from "lucide-react";
 import { PageHeader } from "@/components/insight";
 import { Card } from "@/components/ui/card";
@@ -13,13 +13,17 @@ type Ptp = {
   id: string; customer_id: string; promise_date: string; amount: number | null;
   status: string; source: string;
 };
+type Restructure = {
+  id: string; customer_id: string; note: string | null; new_installment: number | null;
+  status: string; source: string;
+};
 type Row = {
   customer_id: string; name: string; dpd_stage: string; channels: string[];
   current_dpd: number | null; collectibility: number; collectibility_label: string;
   total_arrears: number | null; collectibility_source: string;
   contacted: boolean; replied: boolean; last_contact_at: string | null;
   last_channel: string | null; last_intent: string | null; last_outcome: string | null;
-  ptp: Ptp | null; suppressed: boolean;
+  ptp: Ptp | null; restructure: Restructure | null; suppressed: boolean;
 };
 type Message = { direction: string; channel: string; body: string; status: string; ts: string };
 type Conversation = {
@@ -54,6 +58,13 @@ const PTP_STYLE: Record<string, string> = {
   CANCELLED: "bg-muted text-muted-foreground",
 };
 
+const RESTRUCTURE_STYLE: Record<string, string> = {
+  ACTIVE: "bg-sky-100 text-sky-900",
+  ACCEPTED: "bg-emerald-100 text-emerald-900",
+  DECLINED: "bg-muted text-muted-foreground",
+  CANCELLED: "bg-muted text-muted-foreground",
+};
+
 function fmtWhen(ts: string | null) {
   if (!ts) return "—";
   const d = new Date(ts);
@@ -69,6 +80,7 @@ export default function OutreachPage() {
   const [busy, setBusy] = useState<string | null>(null); // customer_id of in-flight action
   const [err, setErr] = useState<string | null>(null);
   const [ptpForm, setPtpForm] = useState<{ cif: string; date: string; amount: string } | null>(null);
+  const [rekonForm, setRekonForm] = useState<{ cif: string; note: string; installment: string } | null>(null);
 
   const { data: conv } = useSWR<Conversation>(
     convId ? `/api/outreach/conversations/${convId}` : null,
@@ -147,6 +159,53 @@ export default function OutreachPage() {
     }
   }
 
+  async function submitRekon(row: Row) {
+    if (!rekonForm) return;
+    setBusy(row.customer_id);
+    setErr(null);
+    try {
+      const editing = row.restructure?.status === "ACTIVE";
+      const url = editing ? `/api/outreach/restructures/${row.restructure!.id}` : "/api/outreach/restructures";
+      const body: Record<string, unknown> = {};
+      if (!editing) body.customer_id = row.customer_id;
+      if (rekonForm.note) body.note = rekonForm.note;
+      if (rekonForm.installment) body.new_installment = Number(rekonForm.installment);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) setErr(data.error ?? `Error ${res.status}`);
+      else setRekonForm(null);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(null);
+      refreshWb();
+    }
+  }
+
+  async function settleRekon(row: Row, status: "ACCEPTED" | "DECLINED" | "CANCELLED") {
+    if (!row.restructure) return;
+    setBusy(row.customer_id);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/outreach/restructures/${row.restructure.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const data = await res.json();
+      if (!res.ok) setErr(data.error ?? `Error ${res.status}`);
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(null);
+      refreshWb();
+    }
+  }
+
   const rows = wb?.rows ?? [];
 
   return (
@@ -194,13 +253,14 @@ export default function OutreachPage() {
               <th className="px-4 py-3">Last contact</th>
               <th className="px-4 py-3">Outcome</th>
               <th className="px-4 py-3">Promise to pay</th>
+              <th className="px-4 py-3">Rekonstruksi</th>
               <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                <td colSpan={10} className="px-4 py-8 text-center text-sm text-muted-foreground">
                   {wb ? "No demo debtors — is the collections bot reachable?" : "Loading workbench…"}
                 </td>
               </tr>
@@ -208,6 +268,8 @@ export default function OutreachPage() {
             {rows.map((r) => {
               const active = r.ptp?.status === "ACTIVE";
               const formOpen = ptpForm?.cif === r.customer_id;
+              const rekonActive = r.restructure?.status === "ACTIVE";
+              const rekonOpen = rekonForm?.cif === r.customer_id;
               return (
                 <tr key={r.customer_id} className="border-b last:border-0 align-top">
                   <td className="px-4 py-3">
@@ -273,13 +335,44 @@ export default function OutreachPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
+                    {r.restructure ? (
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${RESTRUCTURE_STYLE[r.restructure.status] ?? "bg-muted"}`}
+                        title={r.restructure.note ?? undefined}>
+                        <FileText className="h-3 w-3" />
+                        {r.restructure.new_installment != null ? `RM ${r.restructure.new_installment.toLocaleString()}/mo` : "Offer"}
+                        {` · ${r.restructure.status}`}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                    {rekonOpen && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <input type="text" placeholder="Plan note" value={rekonForm.note}
+                          onChange={(e) => setRekonForm({ ...rekonForm, note: e.target.value })}
+                          className="w-36 rounded border bg-card px-2 py-1 text-xs" />
+                        <input type="number" placeholder="New RM/mo" value={rekonForm.installment}
+                          onChange={(e) => setRekonForm({ ...rekonForm, installment: e.target.value })}
+                          className="w-24 rounded border bg-card px-2 py-1 text-xs" />
+                        <button onClick={() => submitRekon(r)} disabled={busy === r.customer_id}
+                          className="rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground disabled:opacity-40">
+                          Save
+                        </button>
+                        <button onClick={() => setRekonForm(null)} className="rounded border px-2 py-1 text-xs">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
                     <div className="flex flex-wrap justify-end gap-1.5">
                       <button
                         disabled={busy === r.customer_id || r.suppressed || !r.channels.includes(channel)}
                         onClick={() => startOutreach(r.customer_id)}
-                        title={r.suppressed
+                        title={active
                           ? `Suppressed until ${r.ptp?.promise_date} — active promise-to-pay`
-                          : !r.channels.includes(channel) ? `No ${channel} destination` : `Send ${channel} reminder`}
+                          : rekonActive
+                            ? "Suppressed — active Rekonstruksi offer on the table"
+                            : !r.channels.includes(channel) ? `No ${channel} destination` : `Send ${channel} reminder`}
                         className="inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-40"
                       >
                         {r.suppressed ? <Lock className="h-3 w-3" /> : <Send className="h-3 w-3" />}
@@ -305,6 +398,29 @@ export default function OutreachPage() {
                           <button disabled={busy === r.customer_id} onClick={() => settlePtp(r, "CANCELLED")}
                             className="rounded-lg border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">
                             Cancel
+                          </button>
+                        </>
+                      )}
+                      <button
+                        disabled={busy === r.customer_id}
+                        onClick={() => setRekonForm(rekonOpen ? null : {
+                          cif: r.customer_id,
+                          note: rekonActive ? r.restructure!.note ?? "" : "",
+                          installment: rekonActive && r.restructure!.new_installment != null ? String(r.restructure!.new_installment) : "",
+                        })}
+                        className="rounded-lg border px-2 py-1 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-40"
+                      >
+                        {rekonActive ? "Edit Rekon" : "Set Rekon"}
+                      </button>
+                      {rekonActive && (
+                        <>
+                          <button disabled={busy === r.customer_id} onClick={() => settleRekon(r, "ACCEPTED")}
+                            className="rounded-lg border border-emerald-300 px-2 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-50 disabled:opacity-40">
+                            Accept
+                          </button>
+                          <button disabled={busy === r.customer_id} onClick={() => settleRekon(r, "DECLINED")}
+                            className="rounded-lg border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">
+                            Decline
                           </button>
                         </>
                       )}
@@ -366,6 +482,7 @@ export default function OutreachPage() {
       <p className="text-xs text-muted-foreground">
         Collectibility is the regulatory 5-class view (demo OJK-style DPD bands); the bot&apos;s tone stages are a separate scale.
         A WhatsApp reply agreeing to pay is captured as a promise-to-pay automatically — sends stay locked until the promise date passes.
+        A hardship reply opens a Rekonstruksi offer, which locks sends until an officer resolves it (Accept / Decline).
         Demo — AI-generated messages.
       </p>
     </div>
