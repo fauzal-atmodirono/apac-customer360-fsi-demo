@@ -31,6 +31,19 @@ class PtpUpdateIn(BaseModel):
     amount: float | None = None
 
 
+class RestructureIn(BaseModel):
+    customer_id: str
+    note: str | None = None
+    new_installment: float | None = None
+    conversation_id: str | None = None
+
+
+class RestructureUpdateIn(BaseModel):
+    status: str | None = None  # ACCEPTED, DECLINED or CANCELLED
+    note: str | None = None
+    new_installment: float | None = None
+
+
 def _valid_iso_date(value: str) -> bool:
     try:
         date.fromisoformat(value)
@@ -100,11 +113,23 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call,
                 {"error": "active promise-to-pay", "reason": "ACTIVE_PTP",
                  "ptp_id": active["id"], "promise_date": active["promise_date"]},
                 status_code=409)
+        # Restructure suppression: don't chase while a Rekonstruksi offer is on the table.
+        restructure = store.active_restructure_for(inp.customer_id)
+        if restructure:
+            return JSONResponse(
+                {"error": "active restructure offer", "reason": "ACTIVE_RESTRUCTURE",
+                 "restructure_id": restructure["id"]},
+                status_code=409)
         facts = lookup.facts_for(inp.customer_id, contact.name)
         # Demo integrity: when BigQuery has no real case row (default fallback has empty
         # loan_id), trust the contact's configured DPD stage so the badge and the opener tone match.
         if not facts.loan_id:
             facts = replace(facts, stage=contact.dpd_stage)
+        # Demo payment overlay: quote the arrears net of recorded payments (sum of KEPT
+        # promise amounts) so the message matches the dashboard. BigQuery stays the ledger.
+        paid = store.paid_to_date(inp.customer_id)
+        if paid:
+            facts = replace(facts, outstanding=max(0.0, facts.outstanding - paid))
         opening = conversation.compose_opening(facts, llm_call=llm_call)
         dest = _dest(contact, inp.channel)
         if not dest:
@@ -173,21 +198,65 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call,
             store.update_ptp(ptp_id, **fields)
         return {"ptp_id": ptp_id, **store.get_ptp(ptp_id)}
 
+    @app.get("/restructures", dependencies=[Depends(_auth)])
+    def list_restructures(customer_id: str | None = None):
+        return store.list_restructures(customer_id=customer_id)
+
+    @app.post("/restructures", dependencies=[Depends(_auth)])
+    def create_restructure(inp: RestructureIn):
+        if inp.customer_id not in contacts:
+            return JSONResponse({"error": f"unknown debtor {inp.customer_id}"}, status_code=422)
+        if store.active_restructure_for(inp.customer_id):
+            return JSONResponse({"error": "debtor already has an active restructure offer"},
+                                status_code=409)
+        rid = store.create_restructure(inp.customer_id, inp.conversation_id,
+                                       inp.note, inp.new_installment, "manual")
+        return {"restructure_id": rid}
+
+    @app.post("/restructures/{restructure_id}", dependencies=[Depends(_auth)])
+    def update_restructure(restructure_id: str, inp: RestructureUpdateIn):
+        record = store.get_restructure(restructure_id)
+        if not record:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if record["status"] != "ACTIVE":
+            return JSONResponse({"error": f"restructure is {record['status']}, only ACTIVE can change"},
+                                status_code=409)
+        fields = {}
+        if inp.status is not None:
+            if inp.status not in ("ACCEPTED", "DECLINED", "CANCELLED"):
+                return JSONResponse({"error": "status must be ACCEPTED, DECLINED or CANCELLED"},
+                                    status_code=422)
+            fields["status"] = inp.status
+        if inp.note is not None:
+            fields["note"] = inp.note
+        if inp.new_installment is not None:
+            fields["new_installment"] = inp.new_installment
+        if fields:
+            store.update_restructure(restructure_id, **fields)
+        return {"restructure_id": restructure_id, **store.get_restructure(restructure_id)}
+
     @app.get("/outreach-summary", dependencies=[Depends(_auth)])
     def outreach_summary():
         store.mark_broken_ptps(today_fn())
         summary = store.outreach_summary()
         today = today_fn()
         for cif, row in summary.items():
-            active = store.active_ptp_for(cif, today)
-            row["active_ptp"] = active
+            row["active_ptp"] = store.active_ptp_for(cif, today)
+            row["active_restructure"] = store.active_restructure_for(cif)
         # debtors with a PTP but no conversation yet (manual PTP before first contact)
         for record in store.list_ptps():
             cif = record["customer_id"]
             if record["status"] == "ACTIVE" and cif not in summary:
                 summary[cif] = {"contacted": False, "replied": False, "last_contact_at": None,
                                 "last_channel": None, "last_intent": None, "last_outcome": None,
-                                "active_ptp": record}
+                                "active_ptp": record, "active_restructure": None}
+        # debtors with a restructure but no conversation yet (manual offer before first contact)
+        for record in store.list_restructures():
+            cif = record["customer_id"]
+            if record["status"] == "ACTIVE" and cif not in summary:
+                summary[cif] = {"contacted": False, "replied": False, "last_contact_at": None,
+                                "last_channel": None, "last_intent": None, "last_outcome": None,
+                                "active_ptp": None, "active_restructure": record}
         return summary
 
     @app.get("/conversations/{conversation_id}", dependencies=[Depends(_auth)])
@@ -222,6 +291,7 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call,
         turn = conversation.next_turn(
             stage=conv["stage"], current_language=conv["language"],
             history=history, inbound_text=body, llm_call=llm_call,
+            today=today_fn(),
         )
         try:
             out_sid, out_status = adapter.send("whatsapp", sender, turn.reply)
@@ -240,6 +310,11 @@ def build_app(settings, contacts, store, adapter, lookup, llm_call,
                 store.create_ptp(conv["customer_id"], conv["id"],
                                  turn.ptp_date or ptp.default_promise_date(today),
                                  turn.ptp_amount, "bot")
+        # A HARDSHIP reply triggered a Rekonstruksi offer: record it (once) so /start
+        # holds off chasing while the offer is on the table (resolved manually in the UI).
+        elif turn.intent == "HARDSHIP":
+            if store.active_restructure_for(conv["customer_id"]) is None:
+                store.create_restructure(conv["customer_id"], conv["id"], None, None, "bot")
         return Response(content="", media_type="application/xml")
 
     return app

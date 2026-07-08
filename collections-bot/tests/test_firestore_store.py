@@ -250,3 +250,77 @@ def test_outreach_summary_uses_latest_conversation(monkeypatch):
     summary = s.outreach_summary()
     assert summary["001"]["last_channel"] == "whatsapp"
     assert summary["001"]["last_outcome"] == "RESTRUCTURE_OFFERED"
+
+
+# --- restructure (Rekonstruksi) records ------------------------------------
+
+def test_create_and_get_restructure():
+    s = make_store()
+    rid = s.create_restructure("001", "conv1", "Reduce installment to RM300 x 12", 300.0, "bot")
+    r = s.get_restructure(rid)
+    assert r["customer_id"] == "001"
+    assert r["conversation_id"] == "conv1"
+    assert r["note"] == "Reduce installment to RM300 x 12"
+    assert r["new_installment"] == 300.0
+    assert r["status"] == "ACTIVE"
+    assert r["source"] == "bot"
+    assert s.get_restructure("missing") is None
+
+
+def test_list_restructures_filters_by_customer():
+    s = make_store()
+    s.create_restructure("001", None, None, None, "manual")
+    s.create_restructure("002", None, "note", 200.0, "bot")
+    assert len(s.list_restructures()) == 2
+    only = s.list_restructures(customer_id="002")
+    assert len(only) == 1
+    assert only[0]["customer_id"] == "002"
+
+
+def test_update_restructure_allowlist():
+    s = make_store()
+    rid = s.create_restructure("001", None, "old", 400.0, "bot")
+    s.update_restructure(rid, status="ACCEPTED", note="new plan", new_installment=250.0, customer_id="HACK")
+    r = s.get_restructure(rid)
+    assert r["status"] == "ACCEPTED"
+    assert r["note"] == "new plan"
+    assert r["new_installment"] == 250.0
+    assert r["customer_id"] == "001"  # not in allowlist, unchanged
+
+
+def test_active_restructure_for_returns_active():
+    s = make_store()
+    rid = s.create_restructure("001", None, None, None, "bot")
+    active = s.active_restructure_for("001")
+    assert active["id"] == rid
+    assert s.active_restructure_for("002") is None
+
+
+def test_active_restructure_for_ignores_settled():
+    s = make_store()
+    for status in ("ACCEPTED", "DECLINED", "CANCELLED"):
+        rid = s.create_restructure("001", None, None, None, "manual")
+        s.update_restructure(rid, status=status)
+    assert s.active_restructure_for("001") is None
+
+
+# --- demo payment overlay (paid-to-date from KEPT PTPs) ---------------------
+
+def test_paid_to_date_sums_kept_amounts():
+    s = make_store()
+    p1 = s.create_ptp("001", None, "2026-07-10", 1000.0, "bot"); s.update_ptp(p1, status="KEPT")
+    p2 = s.create_ptp("001", None, "2026-07-20", 2000.0, "manual"); s.update_ptp(p2, status="KEPT")
+    assert s.paid_to_date("001") == 3000.0
+
+
+def test_paid_to_date_ignores_non_kept_and_null_amounts():
+    s = make_store()
+    kept = s.create_ptp("001", None, "2026-07-10", 500.0, "bot"); s.update_ptp(kept, status="KEPT")
+    s.create_ptp("001", None, "2026-07-11", 999.0, "bot")                                  # ACTIVE — ignored
+    nullamt = s.create_ptp("001", None, "2026-07-12", None, "bot"); s.update_ptp(nullamt, status="KEPT")
+    assert s.paid_to_date("001") == 500.0
+
+
+def test_paid_to_date_zero_when_no_kept():
+    s = make_store()
+    assert s.paid_to_date("001") == 0.0

@@ -16,6 +16,7 @@ from store import _rollup
 
 _ALLOWED_UPDATES = {"tone", "language", "detected_intent", "outcome"}
 _ALLOWED_PTP_UPDATES = {"promise_date", "amount", "status"}
+_ALLOWED_RESTRUCTURE_UPDATES = {"note", "new_installment", "status"}
 
 
 def _now() -> str:
@@ -32,6 +33,7 @@ class FirestoreStore:
         self._convs = self._db.collection("conversations")
         self._msgs = self._db.collection("messages")
         self._ptps = self._db.collection("ptps")
+        self._restructures = self._db.collection("restructures")
 
     @staticmethod
     def _eq(field: str, value):
@@ -151,6 +153,55 @@ class FirestoreStore:
         self.mark_broken_ptps(today)
         docs = [d.to_dict() for d in
                 self._ptps.where(filter=self._eq("customer_id", customer_id)).stream()]
+        active = [d for d in docs if d.get("status") == "ACTIVE"]
+        if not active:
+            return None
+        active.sort(key=lambda d: d.get("created_at") or "", reverse=True)
+        return active[0]
+
+    def paid_to_date(self, customer_id) -> float:
+        # Demo overlay: total actually paid = sum of KEPT promise amounts (NULLs skipped).
+        docs = [d.to_dict() for d in
+                self._ptps.where(filter=self._eq("customer_id", customer_id)).stream()]
+        return float(sum(d.get("amount") or 0 for d in docs if d.get("status") == "KEPT"))
+
+    # --- restructure (Rekonstruksi) records ----------------------------------
+    # Suppresses reminders while ACTIVE; no due date, so no lazy expiry (resolved
+    # manually via the workbench). Mirrors store.Store for a drop-in swap.
+
+    def create_restructure(self, customer_id, conversation_id, note, new_installment, source) -> str:
+        rid = uuid.uuid4().hex
+        ts = _now()
+        self._restructures.document(rid).set({
+            "id": rid, "customer_id": customer_id, "conversation_id": conversation_id,
+            "note": note, "new_installment": new_installment,
+            "status": "ACTIVE", "source": source, "created_at": ts, "updated_at": ts,
+        })
+        return rid
+
+    def get_restructure(self, restructure_id) -> dict | None:
+        snap = self._restructures.document(restructure_id).get()
+        return snap.to_dict() if snap.exists else None
+
+    def list_restructures(self, customer_id=None) -> list[dict]:
+        if customer_id:
+            q = self._restructures.where(filter=self._eq("customer_id", customer_id))
+        else:
+            q = self._restructures
+        docs = [d.to_dict() for d in q.stream()]
+        docs.sort(key=lambda d: d.get("created_at") or "", reverse=True)
+        return docs
+
+    def update_restructure(self, restructure_id, **fields) -> None:
+        cols = {k: v for k, v in fields.items() if k in _ALLOWED_RESTRUCTURE_UPDATES}
+        if not cols:
+            return
+        cols["updated_at"] = _now()
+        self._restructures.document(restructure_id).update(cols)
+
+    def active_restructure_for(self, customer_id) -> dict | None:
+        docs = [d.to_dict() for d in
+                self._restructures.where(filter=self._eq("customer_id", customer_id)).stream()]
         active = [d for d in docs if d.get("status") == "ACTIVE"]
         if not active:
             return None

@@ -110,3 +110,41 @@ def test_next_turn_degraded_has_no_ptp():
     assert turn.degraded is True
     assert turn.ptp_date is None
     assert turn.ptp_amount is None
+
+def test_next_turn_logs_reason_when_degraded(caplog):
+    import logging
+    with caplog.at_level(logging.WARNING):
+        turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                         inbound_text="i bisa bayar 10 julai", llm_call=lambda s, u: "not json at all")
+    assert turn.degraded is True
+    # the silent black hole is gone: the degrade reason is logged for observability
+    assert any("degrad" in r.getMessage().lower() for r in caplog.records)
+
+def test_build_reply_prompt_anchors_today_when_given():
+    system, user = build_reply_prompt("INTENSIVE", "ms", [], "24 Julai", today="2026-07-07")
+    assert "2026-07-07" in system or "2026-07-07" in user
+    assert "future" in system.lower()  # instruct the model to resolve to the upcoming date
+
+def test_next_turn_agree_normalizes_wrong_year_ptp():
+    def fake(s, u):
+        return ('{"intent":"AGREE","language":"ms","reply":"Terima kasih.",'
+                '"ptp_date":"2025-07-24","ptp_amount":300}')
+    turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                     inbound_text="saya bayar 24 Julai", llm_call=fake, today="2026-07-07")
+    assert turn.ptp_date == "2026-07-24"  # rolled forward to the upcoming date, not a past year
+    assert turn.ptp_amount == 300.0
+
+def test_next_turn_agree_keeps_future_ptp_with_today():
+    def fake(s, u):
+        return '{"intent":"AGREE","language":"ms","reply":"ok","ptp_date":"2026-07-24"}'
+    turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                     inbound_text="24 Julai", llm_call=fake, today="2026-07-07")
+    assert turn.ptp_date == "2026-07-24"
+
+def test_next_turn_without_today_skips_normalization():
+    # Backward-compatible: no anchor date -> the extracted date is used verbatim.
+    def fake(s, u):
+        return '{"intent":"AGREE","language":"ms","reply":"ok","ptp_date":"2025-07-24"}'
+    turn = next_turn(stage="INTENSIVE", current_language="ms", history=[],
+                     inbound_text="24 Julai", llm_call=fake)
+    assert turn.ptp_date == "2025-07-24"

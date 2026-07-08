@@ -152,6 +152,33 @@ def test_inbound_agree_creates_bot_ptp_with_extracted_date(tmp_path):
     assert ptps[0]["conversation_id"] == cid
 
 
+def test_start_subtracts_paid_from_quoted_arrears(tmp_path):
+    # FakeLookup arrears = 3200; a KEPT PTP of RM1,000 -> the opening quotes RM2,200.
+    captured = {}
+    def capturing_llm(system, user):
+        captured["user"] = user
+        return "Salam."
+    c, store, _ = client(tmp_path, llm_call=capturing_llm)
+    pid = store.create_ptp("001", None, "2026-07-10", 1000.0, "manual")
+    store.update_ptp(pid, status="KEPT")
+    assert c.post("/start", json={"customer_id": "001", "channel": "whatsapp"}).status_code == 200
+    assert "2,200" in captured["user"]       # remaining after RM1,000 paid
+    assert "3,200" not in captured["user"]   # original arrears no longer quoted
+
+
+def test_inbound_agree_normalizes_wrong_year_ptp(tmp_path):
+    # The model returns a past-year date for "24 Julai"; the bot must lock sends until
+    # the *upcoming* 24 Jul, not create an instantly-broken (or forever-locked) promise.
+    llm = lambda s, u: ('{"intent":"AGREE","language":"ms","reply":"Terima kasih.",'
+                        '"ptp_date":"2025-07-24","ptp_amount":300}')
+    c, store, _ = client(tmp_path, llm_call=llm)  # TODAY = 2026-07-06
+    store.create_conversation("001", "whatsapp", 45, "INTENSIVE", "FIRM", "ms", "whatsapp:+60123")
+    c.post("/twilio/inbound", data={"From": "whatsapp:+60123", "Body": "bayar 24 Julai", "MessageSid": "IN1"})
+    ptps = store.list_ptps(customer_id="001")
+    assert ptps[0]["promise_date"] == "2026-07-24"          # rolled to the upcoming date
+    assert store.active_ptp_for("001", TODAY) is not None    # and it locks sends until then
+
+
 def test_inbound_agree_without_date_defaults_plus_three_days(tmp_path):
     llm = lambda s, u: '{"intent":"AGREE","language":"ms","reply":"Terima kasih."}'
     c, store, _ = client(tmp_path, llm_call=llm)
@@ -216,6 +243,82 @@ def test_outreach_summary_merges_active_ptp(tmp_path):
     assert row["contacted"] is True
     assert row["replied"] is False
     assert row["active_ptp"]["promise_date"] == "2026-07-10"
+
+
+def test_start_suppressed_by_active_restructure(tmp_path):
+    c, store, adapter = client(tmp_path)
+    store.create_restructure("001", None, "RM300 x 12", 300.0, "manual")
+    r = c.post("/start", json={"customer_id": "001", "channel": "whatsapp"})
+    assert r.status_code == 409
+    body = r.json()
+    assert body["reason"] == "ACTIVE_RESTRUCTURE"
+    assert adapter.sent == []  # nothing was sent while a restructure is on the table
+
+
+def test_inbound_hardship_creates_bot_restructure(tmp_path):
+    llm = lambda s, u: '{"intent":"HARDSHIP","language":"ms","reply":"Kami tawarkan penstrukturan."}'
+    c, store, _ = client(tmp_path, llm_call=llm)
+    cid = store.create_conversation("001", "whatsapp", 45, "INTENSIVE", "FIRM", "ms", "whatsapp:+60123")
+    c.post("/twilio/inbound", data={"From": "whatsapp:+60123", "Body": "saya susah", "MessageSid": "IN1"})
+    rs = store.list_restructures(customer_id="001")
+    assert len(rs) == 1
+    assert rs[0]["status"] == "ACTIVE"
+    assert rs[0]["source"] == "bot"
+    assert rs[0]["conversation_id"] == cid
+
+
+def test_inbound_second_hardship_does_not_duplicate_restructure(tmp_path):
+    llm = lambda s, u: '{"intent":"HARDSHIP","language":"ms","reply":"Kami tawarkan penstrukturan."}'
+    c, store, _ = client(tmp_path, llm_call=llm)
+    store.create_conversation("001", "whatsapp", 45, "INTENSIVE", "FIRM", "ms", "whatsapp:+60123")
+    c.post("/twilio/inbound", data={"From": "whatsapp:+60123", "Body": "susah", "MessageSid": "IN1"})
+    c.post("/twilio/inbound", data={"From": "whatsapp:+60123", "Body": "masih susah", "MessageSid": "IN2"})
+    assert len(store.list_restructures(customer_id="001")) == 1
+
+
+def test_restructure_crud_endpoints(tmp_path):
+    c, store, _ = client(tmp_path)
+    # unknown CIF rejected
+    assert c.post("/restructures", json={"customer_id": "999"}).status_code == 422
+    # create
+    r = c.post("/restructures", json={"customer_id": "001", "note": "RM250 x 18", "new_installment": 250})
+    assert r.status_code == 200
+    rid = r.json()["restructure_id"]
+    assert store.get_restructure(rid)["source"] == "manual"
+    # duplicate ACTIVE rejected
+    assert c.post("/restructures", json={"customer_id": "001"}).status_code == 409
+    # list
+    rows = c.get("/restructures", params={"customer_id": "001"}).json()
+    assert len(rows) == 1
+    # transition to ACCEPTED
+    assert c.post(f"/restructures/{rid}", json={"status": "ACCEPTED"}).status_code == 200
+    assert store.get_restructure(rid)["status"] == "ACCEPTED"
+    # settled restructures are immutable
+    assert c.post(f"/restructures/{rid}", json={"status": "CANCELLED"}).status_code == 409
+    # bad status rejected
+    rid2 = c.post("/restructures", json={"customer_id": "001"}).json()["restructure_id"]
+    assert c.post(f"/restructures/{rid2}", json={"status": "BOGUS"}).status_code == 422
+    # unknown id
+    assert c.post("/restructures/nope", json={"status": "ACCEPTED"}).status_code == 404
+
+
+def test_outreach_summary_merges_active_restructure(tmp_path):
+    c, store, _ = client(tmp_path)
+    cid = store.create_conversation("001", "whatsapp", 45, "INTENSIVE", "FIRM", "ms", "whatsapp:+60123")
+    store.add_message(cid, "out", "whatsapp", "Salam", twilio_sid="SM1")
+    store.create_restructure("001", cid, "RM300 x 12", 300.0, "bot")
+    row = c.get("/outreach-summary").json()["001"]
+    assert row["active_restructure"]["new_installment"] == 300.0
+
+
+def test_restructure_routes_require_key_when_set(tmp_path):
+    store = Store(str(tmp_path / "r.sqlite"))
+    s = replace(settings(), bot_api_key="secret")
+    app = build_app(s, CONTACTS, store, FakeAdapter(), FakeLookup(),
+                    llm_call=lambda sy, u: "Salam.", today_fn=lambda: TODAY)
+    c = TestClient(app)
+    assert c.get("/restructures").status_code == 401
+    assert c.post("/restructures", json={"customer_id": "001"}).status_code == 401
 
 
 def test_ptp_routes_require_key_when_set(tmp_path):

@@ -33,6 +33,28 @@ def default_promise_date(today: str) -> str:
     return (date.fromisoformat(today) + timedelta(days=DEFAULT_PTP_OFFSET_DAYS)).isoformat()
 
 
+def normalize_future_date(iso: str | None, today: str) -> str | None:
+    """Roll a bare/relative promise date to its next future occurrence.
+
+    The LLM never knows today's date, so "24 Julai" can come back with the wrong
+    year — a past year makes the promise instantly BROKEN; a future one locks
+    sends forever. A promise is always forward-looking, so any date before today
+    is bumped year-by-year until it lands on or after today (the promise day
+    itself still counts). Non-ISO input is returned untouched (nothing to fix).
+    """
+    try:
+        d = date.fromisoformat(iso)
+        t = date.fromisoformat(today)
+    except (ValueError, TypeError):
+        return iso
+    while d < t:
+        try:
+            d = d.replace(year=d.year + 1)
+        except ValueError:  # 29 Feb -> non-leap year: clamp to 28 Feb
+            d = d.replace(year=d.year + 1, day=28)
+    return d.isoformat()
+
+
 def is_suppressed(ptp_record: dict | None, today: str) -> bool:
     """True while an ACTIVE promise is not yet past due (the whole promise day counts)."""
     if not ptp_record:

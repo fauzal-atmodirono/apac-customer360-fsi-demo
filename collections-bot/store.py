@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 _ALLOWED_UPDATES = {"tone", "language", "detected_intent", "outcome"}
 _ALLOWED_PTP_UPDATES = {"promise_date", "amount", "status"}
+_ALLOWED_RESTRUCTURE_UPDATES = {"note", "new_installment", "status"}
 
 
 def _now() -> str:
@@ -64,6 +65,12 @@ class Store:
                 CREATE TABLE IF NOT EXISTS ptps (
                     id TEXT PRIMARY KEY, customer_id TEXT, conversation_id TEXT,
                     promise_date TEXT, amount REAL, status TEXT, source TEXT,
+                    created_at TEXT, updated_at TEXT
+                )""")
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS restructures (
+                    id TEXT PRIMARY KEY, customer_id TEXT, conversation_id TEXT,
+                    note TEXT, new_installment REAL, status TEXT, source TEXT,
                     created_at TEXT, updated_at TEXT
                 )""")
 
@@ -202,6 +209,71 @@ class Store:
         with self._conn() as c:
             row = c.execute(
                 "SELECT * FROM ptps WHERE customer_id=? AND status='ACTIVE' "
+                "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (customer_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def paid_to_date(self, customer_id) -> float:
+        # Demo overlay: total actually paid = sum of KEPT promise amounts (NULLs skipped).
+        # BigQuery stays the real ledger; this only drives the displayed deduction.
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM ptps WHERE customer_id=? AND status='KEPT'",
+                (customer_id,),
+            ).fetchone()
+        return float(row[0])
+
+    # --- restructure (Rekonstruksi) records ----------------------------------
+    # A restructure offer suppresses outbound reminders while ACTIVE. Unlike a PTP
+    # it has no due date, so it never lazily expires — a collections officer resolves
+    # it via the workbench (ACCEPTED / DECLINED / CANCELLED).
+
+    def create_restructure(self, customer_id, conversation_id, note, new_installment, source) -> str:
+        rid = uuid.uuid4().hex
+        ts = _now()
+        with self._conn() as c:
+            c.execute(
+                """INSERT INTO restructures
+                   (id, customer_id, conversation_id, note, new_installment,
+                    status, source, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (rid, customer_id, conversation_id, note, new_installment,
+                 "ACTIVE", source, ts, ts),
+            )
+        return rid
+
+    def get_restructure(self, restructure_id) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT * FROM restructures WHERE id=?", (restructure_id,)).fetchone()
+        return dict(row) if row else None
+
+    def list_restructures(self, customer_id=None) -> list[dict]:
+        sql = "SELECT * FROM restructures"
+        args: tuple = ()
+        if customer_id:
+            sql += " WHERE customer_id=?"
+            args = (customer_id,)
+        sql += " ORDER BY created_at DESC, rowid DESC"
+        with self._conn() as c:
+            rows = c.execute(sql, args).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_restructure(self, restructure_id, **fields) -> None:
+        cols = {k: v for k, v in fields.items() if k in _ALLOWED_RESTRUCTURE_UPDATES}
+        if not cols:
+            return
+        assignments = ", ".join(f"{k}=?" for k in cols)
+        with self._conn() as c:
+            c.execute(
+                f"UPDATE restructures SET {assignments}, updated_at=? WHERE id=?",
+                (*cols.values(), _now(), restructure_id),
+            )
+
+    def active_restructure_for(self, customer_id) -> dict | None:
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT * FROM restructures WHERE customer_id=? AND status='ACTIVE' "
                 "ORDER BY created_at DESC, rowid DESC LIMIT 1",
                 (customer_id,),
             ).fetchone()
